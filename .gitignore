@@ -1,0 +1,17 @@
+out/
+**/out/
+__pycache__/
+*.pyc
+*.pyo
+.env
+.env.*
+secrets/
+*.secret
+*.pem
+.venv/
+venv/
+
+# Generated deliverables (kept out of VCS)
+*.docx
+*.xlsx
+!samples/**

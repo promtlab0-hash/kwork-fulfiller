@@ -1,0 +1,25 @@
+{
+  "id": "py_script",
+  "title": "Python-скрипт: парсер/автоматизация",
+  "kwork_url": "",
+  "output": "zip",
+  "create": {
+    "template": "templates/code_script.md",
+    "model": "",
+    "response_format": "json",
+    "builder": "code_zip"
+  },
+  "settings": {
+    "count": 1,
+    "language": "ru",
+    "python": "3.10+",
+    "stack": "requests+bs4",
+    "lines_max": 500
+  },
+  "checks": [
+    {"type": "valid_json"},
+    {"type": "py_compiles", "field": "script"},
+    {"type": "no_placeholders"},
+    {"type": "char_range", "field": "script", "min": 200, "max": 60000}
+  ]
+}

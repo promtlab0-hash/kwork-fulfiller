@@ -1,0 +1,82 @@
+name: fulfill
+
+# Запуск вручную из вкладки Actions. Выбираете нишу, вставляете бриф —
+# результат прилетает архивом в Artifacts.
+on:
+  workflow_dispatch:
+    inputs:
+      niche:
+        description: "Ниша (id пресета)"
+        required: true
+        type: choice
+        options:
+          - prompts
+          - seo_core
+          - wb_ozon
+          - content_plan
+          - seo_article
+          - selling
+          - py_script
+      brief:
+        description: "Бриф заказчика"
+        required: true
+        type: string
+      settings:
+        description: "Переопределение настроек: k=v,k=v (опционально)"
+        required: false
+        type: string
+
+jobs:
+  fulfill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Write brief to file
+        run: |
+          cat > brief.txt <<'BRIEF_EOF'
+          ${{ inputs.brief }}
+          BRIEF_EOF
+
+      - name: Build --set args
+        id: sets
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          raw = """${{ inputs.settings }}""".strip()
+          flags = []
+          for pair in (p.strip() for p in raw.split(",")):
+              if "=" in pair:
+                  flags.append(f"--set {pair}")
+          print("args=" + " ".join(flags))
+          PY
+
+      - name: Run fulfiller
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CLAUDE_CODE_NO_TELEMETRY: "1"
+        run: |
+          python fulfill.py \
+            --niche "${{ inputs.niche }}" \
+            --brief brief.txt \
+            --out out \
+            ${{ steps.sets.outputs.args }}
+
+      - name: Upload deliverables
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fulfill-${{ inputs.niche }}
+          path: out/
+          if-no-files-found: warn

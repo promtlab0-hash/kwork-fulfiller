@@ -1,0 +1,26 @@
+{
+  "id": "wb_ozon",
+  "title": "SEO-описания карточек WB/Ozon",
+  "kwork_url": "",
+  "output": "docx",
+  "create": {
+    "template": "templates/marketplace.md",
+    "model": "",
+    "response_format": "json",
+    "builder": "docx",
+    "char_min": 1200
+  },
+  "settings": {
+    "count": 1,
+    "language": "ru",
+    "platform": "Wildberries+Ozon",
+    "char_target": 1500,
+    "keywords_min": 5
+  },
+  "checks": [
+    {"type": "valid_json"},
+    {"type": "has_sections", "sections": ["Описание", "SEO"]},
+    {"type": "no_placeholders"},
+    {"type": "char_range", "min": 800, "max": 60000}
+  ]
+}

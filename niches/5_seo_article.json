@@ -1,0 +1,24 @@
+{
+  "id": "seo_article",
+  "title": "SEO-статья с H2/H3 и мета-тегами",
+  "kwork_url": "",
+  "output": "docx",
+  "create": {
+    "template": "templates/seo_article.md",
+    "model": "",
+    "response_format": "json",
+    "builder": "docx"
+  },
+  "settings": {
+    "count": 1,
+    "language": "ru",
+    "char_min": 2000,
+    "h2_min": 3
+  },
+  "checks": [
+    {"type": "valid_json"},
+    {"type": "min_count", "field": "sections", "value": 4},
+    {"type": "no_placeholders"},
+    {"type": "char_range", "min": 2000, "max": 100000}
+  ]
+}
