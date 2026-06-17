@@ -6,17 +6,11 @@ on:
   workflow_dispatch:
     inputs:
       niche:
-        description: "Ниша (id пресета)"
+        description: "Профиль (id ниши)"
         required: true
         type: choice
         options:
-          - prompts
-          - seo_core
-          - wb_ozon
-          - content_plan
-          - seo_article
-          - selling
-          - py_script
+          - price_list
       brief:
         description: "Бриф заказчика"
         required: true

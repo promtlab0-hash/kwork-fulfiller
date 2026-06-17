@@ -1,251 +1,96 @@
 """Dry-run stubs.
 
-For each niche, produce a deterministic, schema-valid payload (as the JSON
-string the model would have returned) so the builders and checks can run
-offline. The data is realistic enough that every declared check passes.
+For each implemented profile, produce a deterministic, schema-valid payload (as
+the JSON string the model would have returned) so the builders and checks can
+run offline. The data is realistic enough that every declared check passes.
+
+Stubs receive (settings, brief) so volume-niches can mirror the brief's item
+count — that keeps the `completeness` check honest in --dry-run.
 """
 
 from __future__ import annotations
 
 import json
+import re
 
 
-def _prompts_stub(settings: dict) -> dict:
-    cats = max(4, int(settings.get("categories", 5)))
-    per = max(1, int(settings.get("count", 50)) // cats)
-    icons = ["✨", "📈", "📝", "🎯", "💡", "🚀", "🔍", "📣"]
-    categories = []
-    for c in range(cats):
-        prompts = []
-        for p in range(per):
-            prompts.append({
-                "title": f"Промпт {c + 1}.{p + 1}: задача для бизнеса",
-                "prompt": (
-                    "Ты опытный маркетолог с 10-летним стажем. "
-                    f"Проанализируй продукт [ОПИСАНИЕ_ПРОДУКТА] для аудитории [ЦА] "
-                    "и предложи конкретный план действий. Формат ответа: "
-                    "нумерованный список из 5 шагов с обоснованием каждого. "
-                    "Учитывай ограничения бюджета и сроков."
-                ),
-                "usage": "Когда нужно быстро получить структурированный план под нишу.",
-            })
-        categories.append({"name": f"Категория {c + 1}", "icon": icons[c % len(icons)], "prompts": prompts})
-    return {
-        "title": "Промпт-пак под бизнес-нишу",
-        "subtitle": "Готовые промпты для ChatGPT и Claude под задачи заказчика.",
-        "categories": categories,
-    }
+def parse_brief_items(brief: str) -> list[str]:
+    """Best-effort extraction of list positions from a free-form brief.
+
+    Counts lines that look like enumerated/bulleted positions:
+      "1. Плед…", "- Полотенца…", "• Свеча…". Falls back to non-trivial lines
+    under a "Товары"/"Позиции"/"Список" header. Header/label lines are skipped.
+    """
+    items: list[str] = []
+    in_list = False
+    for raw in brief.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        low = line.lower()
+        if re.match(r"^(товары|позиции|услуги|список|ассортимент)\b.*:?\s*$", low):
+            in_list = True
+            continue
+        m = re.match(r"^(?:\d+[.)]\s+|[-•*]\s+)(.+)$", line)
+        if m:
+            items.append(m.group(1).strip())
+            in_list = True
+            continue
+        # A line with "key: value" before the list starts is a label, not an item.
+        if not in_list and ":" in line:
+            continue
+        if in_list:
+            items.append(line)
+    if not items:
+        # No markers at all: treat every non-label line as a position.
+        items = [l.strip() for l in brief.splitlines()
+                 if l.strip() and ":" not in l.strip()]
+    return items
 
 
-def _seo_core_stub(settings: dict) -> dict:
-    n = max(30, int(settings.get("count", 60)))
-    intents = ["commercial", "info", "mixed"]
-    clusters = []
-    for i in range(n):
-        clusters.append({
-            "кластер": f"Кластер {i % 8 + 1}",
-            "запрос": f"купить услугу вариант {i + 1}",
-            "частотность": 100 + (i * 37) % 5000,
-            "интент": intents[i % 3],
-            "тип_страницы": ["home", "category", "product", "article"][i % 4],
-        })
-    return {"title": "Семантическое ядро: ниша заказчика", "clusters": clusters}
+def _name_of(item: str) -> str:
+    """Trim a position line down to a clean heading (drop the '— detail' tail)."""
+    head = re.split(r"\s+[—–-]\s+", item, maxsplit=1)[0]
+    return head.strip().rstrip(".,;")[:80] or item[:80]
 
 
-def _wb_ozon_stub(settings: dict) -> dict:
-    return {
-        "title": "Беспроводные наушники с шумоподавлением",
-        "meta": {"Площадка": settings.get("platform", "WB+Ozon"), "Объём": "~1500 знаков"},
-        "sections": [
-            {
-                "heading": "Описание",
-                "level": 2,
-                "paragraphs": [
-                    "Компактные беспроводные наушники с активным шумоподавлением "
-                    "для города и спорта. Подходят тем, кто ценит чистый звук и "
-                    "автономность в течение всего дня.",
-                    "Эргономичная посадка и влагозащита позволяют использовать их "
-                    "на тренировках и в дороге без дискомфорта.",
-                ],
-                "bullets": [
-                    "Активное шумоподавление → концентрация в метро и опен-спейсе",
-                    "До 30 часов с кейсом → не нужно заряжать каждый день",
-                    "Влагозащита IPX5 → можно тренироваться под дождём",
-                    "Bluetooth 5.3 → стабильное соединение без задержек",
-                    "Сенсорное управление → переключение треков одним касанием",
-                ],
-            },
-            {
-                "heading": "Часто спрашивают",
-                "level": 2,
-                "bullets": [
-                    "Подойдут для звонков? — Да, встроенные микрофоны с шумоочисткой.",
-                    "Сколько держат заряд? — До 8 часов на одном заряде наушников.",
-                ],
-            },
-            {
-                "heading": "SEO-ключи",
-                "level": 2,
-                "bullets": [
-                    "беспроводные наушники", "наушники с шумоподавлением",
-                    "tws наушники", "наушники для спорта", "bluetooth наушники",
-                ],
-            },
-        ],
-    }
-
-
-def _content_plan_stub(settings: dict) -> dict:
-    days = max(20, int(settings.get("count", 30)))
-    rubric = ["E", "E", "V", "V", "S"]
-    plan = []
-    for d in range(1, days + 1):
-        plan.append({
-            "день": d,
-            "дата": f"{d:02d}.06",
-            "рубрика": rubric[d % len(rubric)],
-            "формат": ["пост", "карусель", "reel", "опрос"][d % 4],
-            "тема": f"Тема дня {d}: разбор частой ошибки в нише",
-            "тезисы": "• Контекст • Ошибка • Как исправить • Пример",
-            "хештеги": "#ниша #экспертно #совет",
-        })
-    sections = [
-        {"heading": f"Готовый пост #{i}", "level": 2,
-         "paragraphs": [
-             f"Полный текст готового поста №{i}. Цепляющий первый абзац, "
-             "раскрытие пользы по пунктам и мягкий призыв к действию в конце. "
-             "Текст готов к публикации без правок."]}
-        for i in (1, 2, 3)
-    ]
-    return {"title": "Контент-план на месяц: ниша заказчика", "plan": plan, "sections": sections}
-
-
-def _seo_article_stub(settings: dict) -> dict:
-    para = (
-        "Этот раздел подробно раскрывает тему и закрывает интент читателя. "
-        "Текст написан естественно, без штампов и переспама ключевыми словами, "
-        "при этом главный ключ встречается один раз в начале абзаца. Каждый "
-        "абзац несёт законченную мысль и ведёт читателя к следующему разделу."
-    )
-    return {
-        "title": "Как выбрать услугу: практическое руководство",
-        "meta": {
-            "Title": "Как выбрать услугу — пошаговое руководство 2026",
-            "Description": "Разбираем критерии выбора услуги, частые ошибки и чек-лист. Практические советы и примеры внутри статьи.",
-            "Ключи": "как выбрать услугу, выбор подрядчика, критерии выбора",
-        },
-        "sections": [
-            {"heading": "Введение", "level": 2, "paragraphs": [para]},
-            {"heading": "Критерии выбора", "level": 2, "paragraphs": [para, para],
-             "bullets": ["Опыт", "Отзывы", "Прозрачность цены"]},
-            {"heading": "Частые ошибки", "level": 2, "paragraphs": [para, para]},
-            {"heading": "Заключение", "level": 2,
-             "paragraphs": [para + " Оставьте заявку, чтобы получить расчёт."]},
-        ],
-    }
-
-
-def _selling_stub(settings: dict) -> dict:
-    emails = int(settings.get("emails", 3))
-    sections = [
-        {"heading": "Оффер", "level": 2, "paragraphs": [
-            "Вы теряете заявки, потому что лендинг не закрывает возражения и не "
-            "ведёт посетителя к действию. Мы соберём продающий текст, который "
-            "превращает холодного читателя в заявку за счёт чёткого оффера, "
-            "снятия сомнений и сильного призыва к действию.",
-            "Текст строится по проверенной модели: сначала обозначаем боль "
-            "аудитории, затем показываем измеримый результат, потом доказываем "
-            "его кейсами и закрываем типовые возражения, и только после этого "
-            "делаем предложение с понятным следующим шагом."]},
-        {"heading": "Почему это работает", "level": 2, "bullets": [
-            "Структура AIDA → читатель доходит до CTA, а не закрывает вкладку",
-            "Закрытие возражений → меньше отказов на этапе принятия решения",
-            "Конкретные цифры и сроки → доверие вместо общих обещаний",
-            "Один оффер на экран → внимание не рассеивается между кнопками",
-        ]},
-    ]
-    subjects = ["знакомство и польза", "кейс и доказательство", "оффер с дедлайном"]
-    for i in range(emails):
+def _price_list_stub(settings: dict, brief: str) -> dict:
+    items = parse_brief_items(brief) or ["Товар 1", "Товар 2", "Товар 3"]
+    tone = settings.get("tone", "тёплый, доверительный")
+    sections = []
+    for idx, item in enumerate(items, 1):
+        name = _name_of(item)
+        detail = ""
+        parts = re.split(r"\s+[—–-]\s+", item, maxsplit=1)
+        if len(parts) == 2:
+            detail = parts[1].strip()
+        para = (
+            f"{name} — практичное решение для дома, которое легко впишется в "
+            f"повседневный быт. {('Главное преимущество: ' + detail + '. ') if detail else ''}"
+            f"Продумано до мелочей: приятные материалы, аккуратная отделка и "
+            f"долгий срок службы. Берут, чтобы сделать дом уютнее без лишних хлопот."
+        )
+        bullets = [
+            "Качественные материалы → служит долго и выглядит опрятно",
+            "Простой уход → экономит время на стирке и уборке",
+            f"Готов к использованию сразу → не нужно ничего докупать (позиция {idx})",
+        ]
+        if detail:
+            bullets.insert(0, f"{detail} → ощутимая польза в быту")
         sections.append({
-            "heading": f"Email #{i + 1} — тема: {subjects[i % len(subjects)]}",
+            "heading": name,
             "level": 2,
-            "paragraphs": [
-                "Здравствуйте! В этом письме мы делимся конкретной пользой по "
-                "вашей задаче и показываем на примере, как наш подход экономит "
-                "время и деньги уже в первую неделю работы.",
-                "Без воды и обещаний «золотых гор»: только то, что реально влияет "
-                "на результат, и понятный следующий шаг. В конце письма — мягкий "
-                "призыв перейти к расчёту или короткому звонку, чтобы обсудить "
-                "детали под вашу ситуацию."]})
-    return {"title": "Продающий текст и email-цепочка", "meta": {"Формат": settings.get("format", "landing+email")}, "sections": sections}
-
-
-def _py_script_stub(settings: dict) -> dict:
-    script = (
-        '"""Парсер заголовков статей с сайта.\n'
-        "Заказ Kwork — демонстрационная заглушка.\n"
-        '"""\n'
-        "import logging\n"
-        "import sys\n"
-        "from pathlib import Path\n\n"
-        "import requests\n"
-        "from bs4 import BeautifulSoup\n\n"
-        "INPUT_URL = \"https://example.com\"\n"
-        "OUTPUT_FILE = Path(\"output.csv\")\n"
-        "HEADERS = {\"User-Agent\": \"Mozilla/5.0\"}\n\n"
-        "logging.basicConfig(level=logging.INFO, format=\"%(asctime)s [%(levelname)s] %(message)s\")\n"
-        "log = logging.getLogger(__name__)\n\n\n"
-        "def fetch(url: str) -> list[str]:\n"
-        "    \"\"\"Скачать страницу и вернуть заголовки h2.\"\"\"\n"
-        "    try:\n"
-        "        resp = requests.get(url, headers=HEADERS, timeout=20)\n"
-        "        resp.raise_for_status()\n"
-        "    except requests.RequestException as exc:\n"
-        "        log.error(\"Сетевая ошибка: %s\", exc)\n"
-        "        return []\n"
-        "    soup = BeautifulSoup(resp.text, \"html.parser\")\n"
-        "    return [h.get_text(strip=True) for h in soup.find_all(\"h2\")]\n\n\n"
-        "def save(rows: list[str], path: Path) -> None:\n"
-        "    \"\"\"Сохранить заголовки в CSV.\"\"\"\n"
-        "    path.write_text(\"\\n\".join(rows), encoding=\"utf-8\")\n\n\n"
-        "def main() -> int:\n"
-        "    rows = fetch(INPUT_URL)\n"
-        "    log.info(\"Найдено %d заголовков\", len(rows))\n"
-        "    save(rows, OUTPUT_FILE)\n"
-        "    return 0\n\n\n"
-        "if __name__ == \"__main__\":\n"
-        "    sys.exit(main())\n"
-    )
-    readme = (
-        "# Парсер заголовков\n\n"
-        "## Установка\n"
-        "1. Python 3.10+\n"
-        "2. `python -m venv venv && source venv/bin/activate`\n"
-        "3. `pip install -r requirements.txt`\n\n"
-        "## Запуск\n"
-        "`python script.py`\n\n"
-        "## Что в выходе\n"
-        "Файл `output.csv` со списком заголовков h2.\n\n"
-        "## Troubleshooting\n"
-        "- ModuleNotFoundError — переустановите requirements в активном venv.\n"
-        "- Connection timeout — проверьте сеть/VPN.\n"
-    )
-    return {
-        "title": "Парсер заголовков статей",
-        "script": script,
-        "requirements": "requests==2.31.0\nbeautifulsoup4==4.12.2",
-        "readme": readme,
-    }
+            "paragraphs": [para],
+            "bullets": bullets,
+        })
+    title_line = next((l.strip() for l in brief.splitlines()
+                       if l.lower().strip().startswith("бизнес")), "")
+    title = title_line.split(":", 1)[1].strip() if ":" in title_line else "ниша заказчика"
+    return {"title": f"Прайс-лист: {title}", "sections": sections, "_tone": tone}
 
 
 _STUBS = {
-    "prompts": _prompts_stub,
-    "seo_core": _seo_core_stub,
-    "wb_ozon": _wb_ozon_stub,
-    "content_plan": _content_plan_stub,
-    "seo_article": _seo_article_stub,
-    "selling": _selling_stub,
-    "py_script": _py_script_stub,
+    "price_list": _price_list_stub,
 }
 
 
@@ -253,6 +98,10 @@ def dry_run_stub(niche: dict, brief: str) -> str:
     """Return a JSON string standing in for the model's response."""
     builder = _STUBS.get(niche["id"])
     if builder is None:
-        raise ValueError(f"No dry-run stub for niche {niche['id']!r}")
-    data = builder(niche.get("settings", {}))
+        raise ValueError(
+            f"No dry-run stub for profile {niche['id']!r} "
+            f"(implemented: {', '.join(sorted(_STUBS)) or 'none'})"
+        )
+    data = builder(niche.get("settings", {}), brief)
+    data.pop("_tone", None)
     return json.dumps(data, ensure_ascii=False)

@@ -1,0 +1,29 @@
+{
+  "id": "price_list",
+  "title": "Прайс-лист с продающими описаниями",
+  "kind": "volume",
+  "kwork_url": "",
+  "output": "docx",
+  "create": {
+    "template": "templates/price_list.md",
+    "model": "",
+    "response_format": "json",
+    "builder": "docx"
+  },
+  "settings": {
+    "language": "ru",
+    "tone": "тёплый, доверительный, без штампов",
+    "desc_min": 200,
+    "desc_max": 700,
+    "bullets_min": 3
+  },
+  "checks": [
+    {"type": "valid_json"},
+    {"type": "min_count", "field": "sections", "value": 1},
+    {"type": "completeness", "field": "sections"},
+    {"type": "no_placeholders"},
+    {"type": "no_ai_artifacts"},
+    {"type": "no_duplicates", "field": "sections", "threshold": 0.86},
+    {"type": "char_range", "min": 300, "max": 300000}
+  ]
+}

@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
-"""kwork-fulfiller — CLI orchestrator.
+"""kwork-fulfiller — CLI orchestrator (движок + сменные профили).
+
+Один движок, под каждую услугу — профиль (промпт + правила автопроверки +
+структура документа) в profiles/NN_*.json.
 
 Pipeline for one Kwork order:
-  load niche preset (3 parts: create / settings / checks)
+  load profile (3 parts: create / settings / checks)
     -> read brief
     -> build prompt (template + brief + settings)
     -> call Claude (or dry-run stub)
     -> parse result
     -> builder writes deliverable file(s) into --out
-    -> run_checks and print a ✓/✗ report
+    -> run_checks and print a ✅ОК / ⚠️НА ДОРАБОТКУ report
+    -> (--review) опциональная 2-я ИИ-прогонка на смысл
   Exit code is non-zero if any CRITICAL check fails.
 
 Usage:
-  python fulfill.py --niche prompts --brief samples/prompts.txt --out ./out
-  python fulfill.py --niche seo_core --brief - --set count=80 --out ./out
+  python fulfill.py --niche price_list --brief samples/price_list.txt --out ./out
+  python fulfill.py --niche price_list --brief - --out ./out
   python fulfill.py                       # interactive menu
-  python fulfill.py --niche py_script --brief samples/py_script.txt --dry-run
+  python fulfill.py --niche price_list --brief samples/price_list.txt --dry-run
+  python fulfill.py --niche price_list --brief samples/price_list.txt --review
 """
 
 from __future__ import annotations
@@ -29,18 +34,18 @@ from engine import llm, outputs, validate
 from stubs import dry_run_stub
 
 ROOT = pathlib.Path(__file__).resolve().parent
-NICHES_DIR = ROOT / "niches"
+PROFILES_DIR = ROOT / "profiles"
 
 
 # --------------------------------------------------------------------------- #
-# Niche loading
+# Profile loading
 # --------------------------------------------------------------------------- #
 
 
 def list_niches() -> list[tuple[str, pathlib.Path]]:
-    """Return (id, path) for every niche JSON, ordered by filename prefix."""
+    """Return (id, path) for every profile JSON, ordered by filename prefix."""
     out: list[tuple[str, pathlib.Path]] = []
-    for path in sorted(NICHES_DIR.glob("*.json")):
+    for path in sorted(PROFILES_DIR.glob("*.json")):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
@@ -55,7 +60,7 @@ def load_niche(niche_id: str) -> dict:
         if nid == niche_id or path.stem.endswith(niche_id):
             return json.loads(path.read_text(encoding="utf-8"))
     available = ", ".join(nid for nid, _ in list_niches())
-    raise SystemExit(f"Unknown niche {niche_id!r}. Available: {available}")
+    raise SystemExit(f"Unknown profile {niche_id!r}. Available: {available}")
 
 
 # --------------------------------------------------------------------------- #
@@ -192,7 +197,8 @@ def print_report(
 # --------------------------------------------------------------------------- #
 
 
-def run(niche_id: str, brief_arg: str, out_dir: str, overrides: dict, dry_run: bool) -> int:
+def run(niche_id: str, brief_arg: str, out_dir: str, overrides: dict,
+        dry_run: bool, do_review: bool = False) -> int:
     niche = load_niche(niche_id)
     niche.setdefault("settings", {}).update(overrides)
 
@@ -222,8 +228,18 @@ def run(niche_id: str, brief_arg: str, out_dir: str, overrides: dict, dry_run: b
     base_name = niche["id"]
     files = builder(result, out_path, niche, base_name)
 
-    check_results = validate.run_checks(result, niche.get("checks", []))
+    check_results = validate.run_checks(result, niche.get("checks", []), brief=brief)
     ok = print_report(niche, files, check_results)
+
+    if do_review and not dry_run:
+        from engine import review
+        print("Смысл-ревью (2-я ИИ-прогонка)…")
+        verdict = review.review_result(result, niche, brief)
+        print(f"  Вердикт: {verdict.get('verdict')}")
+        for issue in verdict.get("issues", []):
+            print(f"   • {issue}")
+        print("=" * 60 + "\n")
+
     return 0 if ok else 1
 
 
@@ -248,7 +264,8 @@ def interactive() -> int:
     brief_path = input("Путь к файлу брифа (или текст брифа): ").strip()
     out_dir = input("Папка для результата [./out]: ").strip() or "./out"
     dry = input("Dry-run без сети? [y/N]: ").strip().lower() == "y"
-    return run(nid, brief_path, out_dir, {}, dry)
+    rev = (not dry) and input("Смысл-ревью 2-й прогонкой? [y/N]: ").strip().lower() == "y"
+    return run(nid, brief_path, out_dir, {}, dry, rev)
 
 
 # --------------------------------------------------------------------------- #
@@ -258,13 +275,16 @@ def interactive() -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="kwork-fulfiller — генератор+проверка результата заказа")
-    parser.add_argument("--niche", help="id ниши (см. папку niches/)")
+    parser.add_argument("--niche", "--profile", dest="niche",
+                        help="id профиля (см. папку profiles/)")
     parser.add_argument("--brief", help="файл брифа, '-' для stdin, или текст")
     parser.add_argument("--out", default="./out", help="папка для готовых файлов")
     parser.add_argument("--set", dest="sets", action="append", default=[],
                         metavar="k=v", help="переопределить настройку (повторяемо)")
     parser.add_argument("--dry-run", action="store_true",
                         help="без вызова Claude — подставить осмысленную заглушку")
+    parser.add_argument("--review", action="store_true",
+                        help="вторая ИИ-прогонка на смысл (не в dry-run)")
     args = parser.parse_args(argv)
 
     if not args.niche:
@@ -275,7 +295,7 @@ def main(argv: list[str] | None = None) -> int:
 
     overrides = parse_set_args(args.sets)
     try:
-        return run(args.niche, args.brief, args.out, overrides, args.dry_run)
+        return run(args.niche, args.brief, args.out, overrides, args.dry_run, args.review)
     except llm.LLMError as exc:
         print(f"Ошибка LLM: {exc}", file=sys.stderr)
         return 4

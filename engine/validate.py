@@ -15,15 +15,36 @@ Supported types:
   no_placeholders   — no {{...}}, [ЦА]-style, lorem ipsum, TODO markers
   has_sections      — every name in `sections` appears as a key or heading
   py_compiles       — given Python source compiles cleanly
+  completeness      — len(result[field]) >= number of positions in the brief
+  no_ai_artifacts   — no LLM chatter ("вот ваш текст", "как ИИ", "here is your"…)
+  no_duplicates     — no near-identical blocks in result[field]
 """
 
 from __future__ import annotations
 
 import ast
+import difflib
 import re
 from typing import Any
 
 CheckResult = tuple[str, bool, str]
+
+# Tell-tale phrases an assistant leaks around the actual deliverable.
+_AI_ARTIFACT_PATTERNS = [
+    r"вот ваш[ае]?\b", r"вот готов", r"вот пример текста", r"вот текст",
+    r"как (?:ии|искусственный интеллект|языковая модель|ai)\b",
+    r"в качестве (?:ии|языковой модели|искусственного интеллекта)",
+    r"я(?:,| —)? как (?:ии|языковая модель)",
+    r"я не могу (?:как )?(?:ии|выполнить эту|помочь с)",
+    r"надеюсь,? это (?:поможет|помогло|то, что)",
+    r"конечно[,!]? вот", r"разумеется[,!]? вот", r"безусловно[,!]? вот",
+    r"если (?:у вас )?(?:есть|остались) (?:ещё )?вопросы",
+    r"дайте знать,? если",
+    r"as an ai\b", r"i'?m an ai\b", r"i cannot\b", r"i'?m sorry,? but",
+    r"here'?s? (?:your|the) (?:text|document|list)", r"sure[,!]? here",
+    r"i hope this helps", r"feel free to ask",
+    r"```",  # leftover markdown fences inside the parsed payload
+]
 
 _PLACEHOLDER_PATTERNS = [
     r"\{\{.*?\}\}",          # {{handlebars}}
@@ -159,6 +180,83 @@ def _check_py_compiles(result: Any, check: dict) -> CheckResult:
     return ("py_compiles", True, "source compiles")
 
 
+def _check_no_ai_artifacts(result: Any, _: dict) -> CheckResult:
+    text = _collect_text(result)
+    hits: list[str] = []
+    for pattern in _AI_ARTIFACT_PATTERNS:
+        m = re.search(pattern, text, flags=re.IGNORECASE)
+        if m:
+            hits.append(m.group(0)[:40])
+    ok = not hits
+    detail = "no AI chatter" if ok else f"found: {', '.join(sorted(set(hits))[:5])}"
+    return ("no_ai_artifacts", ok, detail)
+
+
+def _norm(text: str) -> str:
+    """Lowercase + collapse whitespace/punctuation for fuzzy comparison."""
+    return re.sub(r"[\W_]+", " ", text.lower()).strip()
+
+
+def _check_no_duplicates(result: Any, check: dict) -> CheckResult:
+    field = check.get("field", "sections")
+    threshold = float(check.get("threshold", 0.9))
+    blocks = _resolve_field(result, field)
+    if not isinstance(blocks, list) or len(blocks) < 2:
+        return ("no_duplicates", True, "fewer than 2 blocks — nothing to compare")
+    texts = [_norm(_collect_text(b)) for b in blocks]
+    dupes: list[str] = []
+    for i in range(len(texts)):
+        for j in range(i + 1, len(texts)):
+            if not texts[i] or not texts[j]:
+                continue
+            ratio = difflib.SequenceMatcher(None, texts[i], texts[j]).ratio()
+            if ratio >= threshold:
+                dupes.append(f"#{i + 1}≈#{j + 1} ({ratio:.0%})")
+    ok = not dupes
+    detail = "no duplicate blocks" if ok else f"near-duplicates: {', '.join(dupes[:5])}"
+    return (f"no_duplicates[{field}]", ok, detail)
+
+
+def _check_completeness(result: Any, check: dict, brief: str) -> CheckResult:
+    """Output covers every position from the brief (for volume niches)."""
+    field = check.get("field", "sections")
+    target = _resolve_field(result, field)
+    produced = len(target) if isinstance(target, (list, dict)) else 0
+    expected = int(check["value"]) if "value" in check else _count_brief_positions(brief)
+    ok = produced >= expected and produced > 0
+    return (
+        f"completeness[{field}]",
+        ok,
+        f"{produced} produced ≥ {expected} in brief"
+        if ok else f"{produced} produced < {expected} expected — missing positions",
+    )
+
+
+def _count_brief_positions(brief: str) -> int:
+    """Count enumerated/bulleted positions in a brief (mirror of stubs logic)."""
+    count = 0
+    in_list = False
+    for raw in brief.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if re.match(r"^(товары|позиции|услуги|список|ассортимент)\b.*:?\s*$", line.lower()):
+            in_list = True
+            continue
+        if re.match(r"^(?:\d+[.)]\s+|[-•*]\s+)", line):
+            count += 1
+            in_list = True
+            continue
+        if not in_list and ":" in line:
+            continue
+        if in_list:
+            count += 1
+    if count == 0:
+        count = sum(1 for l in brief.splitlines()
+                    if l.strip() and ":" not in l.strip())
+    return max(1, count)
+
+
 _DISPATCH = {
     "nonempty": _check_nonempty,
     "valid_json": _check_valid_json,
@@ -169,20 +267,29 @@ _DISPATCH = {
     "no_placeholders": _check_no_placeholders,
     "has_sections": _check_has_sections,
     "py_compiles": _check_py_compiles,
+    "no_ai_artifacts": _check_no_ai_artifacts,
+    "no_duplicates": _check_no_duplicates,
 }
 
 
-def run_checks(result: Any, checks: list[dict]) -> list[tuple[str, bool, str, bool]]:
+def run_checks(
+    result: Any, checks: list[dict], brief: str = ""
+) -> list[tuple[str, bool, str, bool]]:
     """Run every declared check.
 
     Returns a list of (name, ok, detail, critical) tuples. `critical` defaults
-    to True; a check sets "critical": false to be advisory-only.
+    to True; a check sets "critical": false to be advisory-only. `completeness`
+    needs the brief, so it is dispatched separately.
     """
     out: list[tuple[str, bool, str, bool]] = []
     for check in checks:
         ctype = check.get("type")
-        handler = _DISPATCH.get(ctype)
         critical = bool(check.get("critical", True))
+        if ctype == "completeness":
+            name, ok, detail = _check_completeness(result, check, brief)
+            out.append((name, ok, detail, critical))
+            continue
+        handler = _DISPATCH.get(ctype)
         if handler is None:
             out.append((f"unknown[{ctype}]", False, "no such check type", critical))
             continue
