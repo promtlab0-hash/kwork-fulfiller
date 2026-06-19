@@ -37,6 +37,29 @@ from stubs import dry_run_stub
 ROOT = pathlib.Path(__file__).resolve().parent
 PROFILES_DIR = ROOT / "profiles"
 
+# Единый стандарт качества текста — добавляется в КАЖДЫЙ промпт (рычаг на текст,
+# общий для всех ниш). Конкретика сильнее абстрактных «пиши хорошо».
+QUALITY_STANDARD = """\
+## Стандарт качества текста (обязательно)
+Документ получает платящий заказчик — это серьёзный деловой материал, не черновик.
+- НЕ используй дежурные штампы и канцелярит: «в современном мире», «не секрет, что»,
+  «команда профессионалов», «широкий спектр услуг», «динамично развивающаяся», «идеально
+  подходит», «не оставит равнодушным», «на сегодняшний день», «играет важную роль»,
+  «качественно и в срок», «представляется необходимым», «в соответствии с», «во исполнение».
+  В скриптах и возражениях избегай «я вас понимаю», «это отличный вопрос», «давайте разберёмся».
+- Деловой профессиональный тон: конкретный факт или результат («сокращает обработку заявки
+  до 2 минут»), а не вода и не разговорный регистр.
+- Опирайся на факты и цифры из брифа. Нет факта (цена, срок, гарантия) — не выдумывай:
+  пиши обтекаемо или ставь «—». Никаких [вставь], {{...}}, lorem ipsum.
+- Уникальность: не повторяй одну и ту же формулировку в разных блоках — переформулируй по смыслу.
+- Каждое предложение несёт пользу читателю. Убирай общие слова, оставляй суть."""
+
+# Адвайзори-проверки качества текста, общие для всех ниш (не блокируют сдачу).
+COMMON_ADVISORY = [
+    {"type": "boilerplate", "critical": False, "max_matches": 3},
+    {"type": "vocabulary_richness", "critical": False, "min_ratio": 0.40},
+]
+
 
 # --------------------------------------------------------------------------- #
 # Profile loading
@@ -115,6 +138,8 @@ def build_prompt(niche: dict, brief: str) -> str:
     settings_block = json.dumps(settings, ensure_ascii=False, indent=2)
     return (
         f"{filled}\n\n"
+        f"---\n\n"
+        f"{QUALITY_STANDARD}\n\n"
         f"---\n\n"
         f"## Настройки заказа\n```json\n{settings_block}\n```\n\n"
         f"## Бриф заказчика\n{brief.strip()}\n\n"
@@ -240,7 +265,10 @@ def run(niche_id: str, brief_arg: str, out_dir: str, overrides: dict,
     base_name = niche["id"]
     files = builder(result, out_path, niche, base_name)
 
-    check_results = validate.run_checks(result, niche.get("checks", []), brief=brief)
+    checks = list(niche.get("checks", []))
+    present = {c.get("type") for c in checks}
+    checks += [c for c in COMMON_ADVISORY if c["type"] not in present]
+    check_results = validate.run_checks(result, checks, brief=brief)
     ok = print_report(niche, files, check_results)
 
     if do_review and not dry_run:

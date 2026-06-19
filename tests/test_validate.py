@@ -84,6 +84,35 @@ def test_char_range_bounds():
     ] is False
 
 
+def test_boilerplate_flags_cliches():
+    bad = {"body": "В современном мире не секрет, что наша команда профессионалов "
+                   "предлагает широкий спектр услуг на сегодняшний день."}
+    res = _result([{"type": "boilerplate", "max_matches": 2}], bad)
+    assert res["boilerplate"] is False
+    good = {"body": "Собираем мебель за один выезд. Замер бесплатный, оплата после сборки."}
+    res2 = _result([{"type": "boilerplate", "max_matches": 2}], good)
+    assert res2["boilerplate"] is True
+
+
+def test_vocabulary_richness_flags_repetitive_filler():
+    poor = {"body": ("вода вода вода вода вода вода вода вода вода вода "
+                     "вода вода вода вода вода вода вода вода вода вода")}
+    res = _result([{"type": "vocabulary_richness", "min_ratio": 0.4}], poor)
+    assert res["vocabulary_richness"] is False
+    rich = {"body": ("Замер бесплатный, мастер приедет завтра. Соберём шкаф, "
+                     "повесим полки, подключим технику — оплата после проверки результата.")}
+    res2 = _result([{"type": "vocabulary_richness", "min_ratio": 0.4}], rich)
+    assert res2["vocabulary_richness"] is True
+
+
+def test_advisory_checks_do_not_flip_exit(tmp_path):
+    # boilerplate failing while marked critical:false stays advisory in run_checks.
+    bad = {"sections": [{"paragraphs": ["в современном мире " * 5]}]}
+    out = validate.run_checks(bad, [{"type": "boilerplate", "critical": False, "max_matches": 1}])
+    name, ok, _detail, critical = out[0]
+    assert name == "boilerplate" and critical is False
+
+
 def test_unknown_check_type_reported_as_failure():
     out = validate.run_checks({"a": 1}, [{"type": "bogus"}])
     assert out[0][1] is False  # ok == False

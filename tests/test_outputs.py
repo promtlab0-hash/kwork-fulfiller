@@ -67,3 +67,34 @@ def test_add_table_accepts_dict_rows(tmp_path):
 def test_unknown_builder_raises():
     with pytest.raises(KeyError):
         outputs.get_builder("does_not_exist")
+
+
+def test_document_has_business_styling(tmp_path):
+    from docx.shared import Cm, RGBColor
+    data = {"title": "Отчёт", "sections": [{"heading": "Раздел", "paragraphs": ["Текст."]}]}
+    files = outputs.build_docx(data, tmp_path, NICHE, "styled")
+    document = docx.Document(str(files[0]))
+
+    # Page margins are set (not Word defaults of 2.54cm/2.54cm).
+    section = document.sections[0]
+    assert abs(section.left_margin - Cm(2.5)) < Cm(0.1)
+    assert abs(section.top_margin - Cm(2.5)) < Cm(0.1)
+
+    # Footer carries a page-number label.
+    footer_text = "\n".join(p.text for p in section.footer.paragraphs)
+    assert "стр." in footer_text
+
+    # Headings are neutral near-black, NOT a bright accent colour.
+    heading = next(p for p in document.paragraphs if p.text == "Раздел")
+    colour = heading.runs[0].font.color.rgb
+    assert colour == RGBColor(0x1A, 0x1A, 0x1A)
+
+
+def test_table_header_is_restrained_grey(tmp_path):
+    from docx.oxml.ns import qn
+    data = {"title": "T", "tables": [{"columns": ["A", "B"], "rows": [["1", "2"]]}]}
+    files = outputs.build_docx(data, tmp_path, NICHE, "tbl")
+    document = docx.Document(str(files[0]))
+    header_cell = document.tables[0].rows[0].cells[0]
+    shd = header_cell._tc.get_or_add_tcPr().find(qn("w:shd"))
+    assert shd is not None and shd.get(qn("w:fill")) == "595959"

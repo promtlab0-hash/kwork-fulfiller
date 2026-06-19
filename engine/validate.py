@@ -18,6 +18,8 @@ Supported types:
   completeness      — len(result[field]) >= number of positions in the brief
   no_ai_artifacts   — no LLM chatter ("вот ваш текст", "как ИИ", "here is your"…)
   no_duplicates     — no near-identical blocks in result[field]
+  boilerplate       — few hackneyed/officialese phrases (advisory)
+  vocabulary_richness — unique-word ratio above floor (advisory)
 """
 
 from __future__ import annotations
@@ -218,6 +220,48 @@ def _check_no_duplicates(result: Any, check: dict) -> CheckResult:
     return (f"no_duplicates[{field}]", ok, detail)
 
 
+# Дежурные штампы/канцелярит — маркер «неживого» текста (advisory).
+_BOILERPLATE_PATTERNS = [
+    r"в современном мире", r"не секрет,? что", r"команд[аы] профессионалов",
+    r"широки[йм] спектр(?:ом)? услуг", r"динамично развивающ", r"идеально подход",
+    r"не оставит равнодушн", r"на сегодняшний день", r"играет (?:важную|ключевую) роль",
+    r"качественно и в срок", r"представляется необходимым", r"в соответствии с",
+    r"во исполнение", r"я вас понимаю", r"это отличный вопрос", r"давайте разберёмся",
+]
+
+
+def _check_boilerplate(result: Any, check: dict) -> CheckResult:
+    """Count hackneyed/officialese phrases — too many means lifeless text."""
+    text = _collect_text(result).lower()
+    hits: list[str] = []
+    for pattern in _BOILERPLATE_PATTERNS:
+        for m in re.finditer(pattern, text):
+            hits.append(m.group(0))
+    limit = int(check.get("max_matches", 3))
+    ok = len(hits) <= limit
+    if ok:
+        detail = f"{len(hits)} штампов (лимит {limit})"
+    else:
+        detail = f"{len(hits)} штампов > {limit}: {', '.join(sorted(set(hits))[:5])}"
+    return ("boilerplate", ok, detail)
+
+
+def _check_vocabulary_richness(result: Any, check: dict) -> CheckResult:
+    """Unique-word ratio over content words — low ratio flags repetitive filler."""
+    words = re.findall(r"[a-zA-Zа-яёА-ЯЁ]{4,}", _collect_text(result).lower())
+    total = len(words)
+    if total < 20:
+        return ("vocabulary_richness", True, f"{total} слов — мало для оценки")
+    ratio = len(set(words)) / total
+    floor = float(check.get("min_ratio", 0.40))
+    ok = ratio >= floor
+    return (
+        "vocabulary_richness",
+        ok,
+        f"уникальных {ratio:.0%} (мин {floor:.0%})",
+    )
+
+
 def _check_completeness(result: Any, check: dict, brief: str) -> CheckResult:
     """Output covers every position from the brief (for volume niches)."""
     field = check.get("field", "sections")
@@ -270,6 +314,8 @@ _DISPATCH = {
     "py_compiles": _check_py_compiles,
     "no_ai_artifacts": _check_no_ai_artifacts,
     "no_duplicates": _check_no_duplicates,
+    "boilerplate": _check_boilerplate,
+    "vocabulary_richness": _check_vocabulary_richness,
 }
 
 

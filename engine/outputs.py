@@ -332,9 +332,9 @@ def _add_docx_table(doc, table_spec: Any) -> None:
         run = cell.paragraphs[0].add_run(col)
         run.bold = True
         run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
-        # Purple shading (4B2289) on the header cell.
+        # Restrained dark-grey header shading (595959) — business report, not poster.
         shd = cell._tc.get_or_add_tcPr().makeelement(qn("w:shd"), {
-            qn("w:val"): "clear", qn("w:color"): "auto", qn("w:fill"): "4B2289",
+            qn("w:val"): "clear", qn("w:color"): "auto", qn("w:fill"): "595959",
         })
         cell._tc.get_or_add_tcPr().append(shd)
 
@@ -353,6 +353,52 @@ def _add_docx_table(doc, table_spec: Any) -> None:
             cells[i].text = str(val)
 
 
+# Neutral near-black for headings — sober, not a coloured accent.
+_HEADING_RGB = (0x1A, 0x1A, 0x1A)
+
+
+def _styled_heading(doc, text: str, level: int):
+    """Add a heading in a restrained near-black colour (no bright accent)."""
+    from docx.shared import RGBColor
+    heading = doc.add_heading(text, level=level)
+    for run in heading.runs:
+        run.font.color.rgb = RGBColor(*_HEADING_RGB)
+    return heading
+
+
+def _add_page_footer(doc) -> None:
+    """Centre a small grey 'стр. N' page-number field in the footer."""
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Pt, RGBColor
+
+    para = doc.sections[0].footer.paragraphs[0]
+    para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = para.add_run("стр. ")
+    run.font.size = Pt(9)
+    run.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
+    fld = OxmlElement("w:fldSimple")
+    fld.set(qn("w:instr"), "PAGE")
+    para._p.append(fld)
+
+
+def _apply_document_style(doc) -> None:
+    """Business-document defaults: tidy margins, base font, 1.15 line spacing."""
+    from docx.shared import Cm, Pt
+
+    section = doc.sections[0]
+    section.top_margin = Cm(2.5)
+    section.bottom_margin = Cm(2)
+    section.left_margin = Cm(2.5)
+    section.right_margin = Cm(2)
+
+    normal = doc.styles["Normal"]
+    normal.font.size = Pt(11)
+    normal.paragraph_format.line_spacing = 1.15
+    normal.paragraph_format.space_after = Pt(6)
+
+
 def build_docx(
     data: Any, out_dir: pathlib.Path, niche: dict, base_name: str
 ) -> list[pathlib.Path]:
@@ -366,11 +412,12 @@ def build_docx(
     document may carry a top-level "tables": [spec, ...] appended after sections.
     """
     from docx import Document
-    from docx.shared import Pt
 
     doc = Document()
+    _apply_document_style(doc)
+    _add_page_footer(doc)
     title = data.get("title") or niche.get("title", "Документ")
-    doc.add_heading(title, level=0)
+    _styled_heading(doc, title, level=0)
 
     meta = data.get("meta") or {}
     if isinstance(meta, dict) and meta:
@@ -387,7 +434,7 @@ def build_docx(
             heading = sec.get("heading")
             level = int(sec.get("level", 2))
             if heading:
-                doc.add_heading(heading, level=max(1, min(level, 4)))
+                _styled_heading(doc, heading, level=max(1, min(level, 4)))
             for para in sec.get("paragraphs", []):
                 doc.add_paragraph(str(para))
             for bullet in sec.get("bullets", []):
@@ -407,11 +454,11 @@ def build_docx(
             if not block:
                 continue
             if block.startswith("### "):
-                doc.add_heading(block[4:].strip(), level=3)
+                _styled_heading(doc, block[4:].strip(), level=3)
             elif block.startswith("## "):
-                doc.add_heading(block[3:].strip(), level=2)
+                _styled_heading(doc, block[3:].strip(), level=2)
             elif block.startswith("# "):
-                doc.add_heading(block[2:].strip(), level=1)
+                _styled_heading(doc, block[2:].strip(), level=1)
             elif block.startswith(("- ", "* ")):
                 for line in block.splitlines():
                     line = line.strip().lstrip("-* ").strip()
@@ -432,10 +479,6 @@ def build_docx(
         top_tables = [{"columns": data.get("columns"), "rows": data["rows"]}]
     for spec in (top_tables or []):
         _add_docx_table(doc, spec)
-
-    # Make body text a touch larger for readability.
-    style = doc.styles["Normal"]
-    style.font.size = Pt(11)
 
     path = out_dir / f"{base_name}.docx"
     doc.save(path)
