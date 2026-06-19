@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import sys
 
 from engine import llm, outputs, validate
@@ -80,16 +81,16 @@ def _format_template(template_text: str, settings: dict, brief: str) -> str:
     # Render list values inline for readability inside the prompt.
     rendered = {k: (", ".join(map(str, v)) if isinstance(v, list) else v) for k, v in ctx.items()}
 
-    class _Safe(dict):
-        def __missing__(self, key: str) -> str:
-            return "{" + key + "}"
+    # Substitute ONLY known {settings_key} tokens. We can't use str.format here:
+    # templates embed a JSON example whose braces ({ "title": … }, {{...}}) would
+    # break str.format and (previously) silently skipped ALL substitution. A
+    # targeted regex replaces just the identifiers we know, leaving every other
+    # brace — JSON examples, {{placeholders}} — untouched.
+    def _sub(match: "re.Match") -> str:
+        key = match.group(1)
+        return str(rendered[key]) if key in rendered else match.group(0)
 
-    try:
-        filled = template_text.format_map(_Safe(rendered))
-    except (ValueError, IndexError):
-        # Template contained stray braces (e.g. JSON example) — leave untouched.
-        filled = template_text
-    return filled
+    return re.sub(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", _sub, template_text)
 
 
 def build_prompt(niche: dict, brief: str) -> str:

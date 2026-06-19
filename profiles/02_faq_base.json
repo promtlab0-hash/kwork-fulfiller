@@ -1,0 +1,51 @@
+{
+  "id": "faq_base",
+  "title": "Напишу FAQ — базу вопросов и ответов для сайта в DOCX",
+  "kwork_id": "52893302",
+  "kwork_url": "https://kwork.ru/creative-writing/52893302",
+  "rubric": "Тексты и наполнение сайта",
+  "kind": "volume",
+  "output": "docx",
+  "create": {
+    "template": "templates/faq_base.md",
+    "model": "",
+    "response_format": "json",
+    "builder": "docx"
+  },
+  "settings": {
+    "language": "ru",
+    "tone": "спокойный деловой, без канцелярита",
+    "ans_min": 180,
+    "ans_max": 600
+  },
+  "checks": [
+    {
+      "type": "valid_json"
+    },
+    {
+      "type": "min_count",
+      "field": "sections",
+      "value": 1
+    },
+    {
+      "type": "completeness",
+      "field": "sections"
+    },
+    {
+      "type": "no_duplicates",
+      "field": "sections",
+      "threshold": 0.85
+    },
+    {
+      "type": "no_placeholders"
+    },
+    {
+      "type": "no_ai_artifacts"
+    },
+    {
+      "type": "char_range",
+      "min": 500,
+      "max": 400000
+    }
+  ]
+}

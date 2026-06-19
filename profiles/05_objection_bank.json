@@ -1,0 +1,52 @@
+{
+  "id": "objection_bank",
+  "title": "Соберу банк возражений и ответов для отдела продаж в DOCX",
+  "kwork_id": "52893851",
+  "kwork_url": "https://kwork.ru/business-copywriting/52893851",
+  "rubric": "Продающие и бизнес-тексты → Продажи",
+  "kind": "volume",
+  "output": "docx",
+  "create": {
+    "template": "templates/objection_bank.md",
+    "model": "",
+    "response_format": "json",
+    "builder": "docx"
+  },
+  "settings": {
+    "language": "ru",
+    "tone": "уверенный, без давления",
+    "objections": 15,
+    "answers_per": 3
+  },
+  "checks": [
+    {
+      "type": "valid_json"
+    },
+    {
+      "type": "min_count",
+      "field": "sections",
+      "value": 1
+    },
+    {
+      "type": "min_count",
+      "field": "sections",
+      "value": 12
+    },
+    {
+      "type": "no_duplicates",
+      "field": "sections",
+      "threshold": 0.85
+    },
+    {
+      "type": "no_placeholders"
+    },
+    {
+      "type": "no_ai_artifacts"
+    },
+    {
+      "type": "char_range",
+      "min": 500,
+      "max": 400000
+    }
+  ]
+}

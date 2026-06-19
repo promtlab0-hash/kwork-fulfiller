@@ -1,0 +1,55 @@
+{
+  "id": "tz",
+  "title": "Напишу техническое задание (ТЗ) для исполнителя в DOCX",
+  "kwork_id": "52894001",
+  "kwork_url": "https://kwork.ru/usability-testing/52894001/napishu-tekhnicheskoe-zadanie-tz-dlya-ispolnitelya-v-docx",
+  "rubric": "Тестирование и QA → usability-testing",
+  "kind": "single",
+  "output": "docx",
+  "create": {
+    "template": "templates/tz.md",
+    "model": "",
+    "response_format": "json",
+    "builder": "docx"
+  },
+  "settings": {
+    "language": "ru",
+    "tone": "чёткий, без двусмысленностей"
+  },
+  "checks": [
+    {
+      "type": "valid_json"
+    },
+    {
+      "type": "min_count",
+      "field": "sections",
+      "value": 1
+    },
+    {
+      "type": "min_count",
+      "field": "sections",
+      "value": 5
+    },
+    {
+      "type": "has_sections",
+      "sections": [
+        "цель",
+        "объ",
+        "требован",
+        "этап",
+        "критери"
+      ]
+    },
+    {
+      "type": "no_placeholders"
+    },
+    {
+      "type": "no_ai_artifacts"
+    },
+    {
+      "type": "char_range",
+      "min": 500,
+      "max": 400000
+    }
+  ]
+}

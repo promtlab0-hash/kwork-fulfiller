@@ -11,6 +11,15 @@ on:
         type: choice
         options:
           - price_list
+          - faq_base
+          - content_plan
+          - email_series
+          - objection_bank
+          - kp
+          - sales_script
+          - job_reg
+          - tz
+          - chatbot_script
       brief:
         description: "Бриф заказчика"
         required: true

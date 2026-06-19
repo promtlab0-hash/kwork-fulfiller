@@ -1,8 +1,10 @@
 {
   "id": "price_list",
-  "title": "Прайс-лист с продающими описаниями",
+  "title": "Сделаю прайс-лист с продающими описаниями товаров в DOCX",
+  "kwork_id": "52891705",
+  "kwork_url": "https://kwork.ru/business-copywriting/52891705/sdelayu-prays-list-s-prodayushchimi-opisaniyami-tovarov-v-docx",
+  "rubric": "Тексты и переводы → Продающие и бизнес-тексты (Тип: Продающие тексты)",
   "kind": "volume",
-  "kwork_url": "",
   "output": "docx",
   "create": {
     "template": "templates/price_list.md",
@@ -18,12 +20,33 @@
     "bullets_min": 3
   },
   "checks": [
-    {"type": "valid_json"},
-    {"type": "min_count", "field": "sections", "value": 1},
-    {"type": "completeness", "field": "sections"},
-    {"type": "no_placeholders"},
-    {"type": "no_ai_artifacts"},
-    {"type": "no_duplicates", "field": "sections", "threshold": 0.86},
-    {"type": "char_range", "min": 300, "max": 300000}
+    {
+      "type": "valid_json"
+    },
+    {
+      "type": "min_count",
+      "field": "sections",
+      "value": 1
+    },
+    {
+      "type": "completeness",
+      "field": "sections"
+    },
+    {
+      "type": "no_duplicates",
+      "field": "sections",
+      "threshold": 0.86
+    },
+    {
+      "type": "no_placeholders"
+    },
+    {
+      "type": "no_ai_artifacts"
+    },
+    {
+      "type": "char_range",
+      "min": 500,
+      "max": 400000
+    }
   ]
 }

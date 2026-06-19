@@ -1,0 +1,55 @@
+{
+  "id": "sales_script",
+  "title": "Напишу скрипт продаж для звонков и чатов под ключ в DOCX",
+  "kwork_id": "52893780",
+  "kwork_url": "https://kwork.ru/business-copywriting/52893780",
+  "rubric": "Продающие и бизнес-тексты → Продажи",
+  "kind": "single",
+  "output": "docx",
+  "create": {
+    "template": "templates/sales_script.md",
+    "model": "",
+    "response_format": "json",
+    "builder": "docx"
+  },
+  "settings": {
+    "language": "ru",
+    "tone": "живой разговорный, уверенный"
+  },
+  "checks": [
+    {
+      "type": "valid_json"
+    },
+    {
+      "type": "min_count",
+      "field": "sections",
+      "value": 1
+    },
+    {
+      "type": "min_count",
+      "field": "sections",
+      "value": 5
+    },
+    {
+      "type": "has_sections",
+      "sections": [
+        "приветств",
+        "потребност",
+        "презентац",
+        "возражен",
+        "закрыт"
+      ]
+    },
+    {
+      "type": "no_placeholders"
+    },
+    {
+      "type": "no_ai_artifacts"
+    },
+    {
+      "type": "char_range",
+      "min": 500,
+      "max": 400000
+    }
+  ]
+}

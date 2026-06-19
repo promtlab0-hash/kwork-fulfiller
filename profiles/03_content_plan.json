@@ -1,0 +1,46 @@
+{
+  "id": "content_plan",
+  "title": "Составлю контент-план на месяц для соцсетей в DOCX-таблице",
+  "kwork_id": "52893518",
+  "kwork_url": "https://kwork.ru/smm/52893518",
+  "rubric": "SMM и реклама в соцсетях → Ведение и контент",
+  "kind": "volume",
+  "output": "docx",
+  "create": {
+    "template": "templates/content_plan.md",
+    "model": "",
+    "response_format": "json",
+    "builder": "docx"
+  },
+  "settings": {
+    "language": "ru",
+    "tone": "живой, по делу",
+    "posts": 28
+  },
+  "checks": [
+    {
+      "type": "valid_json"
+    },
+    {
+      "type": "min_count",
+      "field": "rows",
+      "value": 25
+    },
+    {
+      "type": "no_duplicates",
+      "field": "rows",
+      "threshold": 0.85
+    },
+    {
+      "type": "no_placeholders"
+    },
+    {
+      "type": "no_ai_artifacts"
+    },
+    {
+      "type": "char_range",
+      "min": 500,
+      "max": 400000
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "id": "chatbot_script",
+  "title": "Напишу сценарий чат-бота и автоворонки с ветками в DOCX",
+  "kwork_id": "52894056",
+  "kwork_url": "https://kwork.ru/business-copywriting/52894056/napishu-stsenariy-chat-bota-i-avtovoronki-s-vetkami-v-docx",
+  "rubric": "Тексты и переводы → Продающие и бизнес-тексты (Тип: Скрипты продаж и выступлений)",
+  "kind": "single",
+  "output": "docx",
+  "create": {
+    "template": "templates/chatbot_script.md",
+    "model": "",
+    "response_format": "json",
+    "builder": "docx"
+  },
+  "settings": {
+    "language": "ru",
+    "tone": "дружелюбный, живой, без канцелярита"
+  },
+  "checks": [
+    {
+      "type": "valid_json"
+    },
+    {
+      "type": "min_count",
+      "field": "sections",
+      "value": 1
+    },
+    {
+      "type": "min_count",
+      "field": "sections",
+      "value": 5
+    },
+    {
+      "type": "has_sections",
+      "sections": [
+        "приветств",
+        "ветк",
+        "возражен",
+        "дожим",
+        "призыв"
+      ]
+    },
+    {
+      "type": "no_placeholders"
+    },
+    {
+      "type": "no_ai_artifacts"
+    },
+    {
+      "type": "char_range",
+      "min": 500,
+      "max": 400000
+    }
+  ]
+}

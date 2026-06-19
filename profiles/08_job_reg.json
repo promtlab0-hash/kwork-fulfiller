@@ -1,0 +1,55 @@
+{
+  "id": "job_reg",
+  "title": "Составлю должностную инструкцию и регламент для сотрудника в DOCX",
+  "kwork_id": "52893926",
+  "kwork_url": "https://kwork.ru/personal-assistant/52893926",
+  "rubric": "Персональный помощник → Работа в MS Office",
+  "kind": "single",
+  "output": "docx",
+  "create": {
+    "template": "templates/job_reg.md",
+    "model": "",
+    "response_format": "json",
+    "builder": "docx"
+  },
+  "settings": {
+    "language": "ru",
+    "tone": "деловой, чёткий, со сквозной нумерацией"
+  },
+  "checks": [
+    {
+      "type": "valid_json"
+    },
+    {
+      "type": "min_count",
+      "field": "sections",
+      "value": 1
+    },
+    {
+      "type": "min_count",
+      "field": "sections",
+      "value": 5
+    },
+    {
+      "type": "has_sections",
+      "sections": [
+        "общие положения",
+        "обязанности",
+        "права",
+        "ответственность",
+        "порядок"
+      ]
+    },
+    {
+      "type": "no_placeholders"
+    },
+    {
+      "type": "no_ai_artifacts"
+    },
+    {
+      "type": "char_range",
+      "min": 500,
+      "max": 400000
+    }
+  ]
+}

@@ -299,6 +299,60 @@ def _cell(value: Any) -> Any:
 # --------------------------------------------------------------------------- #
 
 
+def _add_docx_table(doc, table_spec: Any) -> None:
+    """Render a {"columns": [...], "rows": [[...]]} spec as a styled Word table.
+
+    Tolerant of shapes: rows may be lists (positional) or dicts (keyed by
+    column). A purple header row matches the xlsx builder's palette. Silently
+    ignores anything that isn't a usable table spec.
+    """
+    if not isinstance(table_spec, dict):
+        return
+    columns = [str(c) for c in (table_spec.get("columns") or [])]
+    raw_rows = table_spec.get("rows") or []
+    if not columns and raw_rows and isinstance(raw_rows[0], dict):
+        # Derive columns from the first record's keys.
+        for rec in raw_rows:
+            if isinstance(rec, dict):
+                for k in rec:
+                    if k not in columns:
+                        columns.append(k)
+    if not columns:
+        return
+
+    from docx.oxml.ns import qn
+    from docx.shared import RGBColor
+
+    table = doc.add_table(rows=1, cols=len(columns))
+    table.style = "Table Grid"
+    hdr = table.rows[0].cells
+    for i, col in enumerate(columns):
+        cell = hdr[i]
+        cell.text = ""
+        run = cell.paragraphs[0].add_run(col)
+        run.bold = True
+        run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+        # Purple shading (4B2289) on the header cell.
+        shd = cell._tc.get_or_add_tcPr().makeelement(qn("w:shd"), {
+            qn("w:val"): "clear", qn("w:color"): "auto", qn("w:fill"): "4B2289",
+        })
+        cell._tc.get_or_add_tcPr().append(shd)
+
+    for raw in raw_rows:
+        if isinstance(raw, dict):
+            values = [raw.get(c, "") for c in columns]
+        elif isinstance(raw, (list, tuple)):
+            values = list(raw)
+        else:
+            values = [raw]
+        cells = table.add_row().cells
+        for i in range(len(columns)):
+            val = values[i] if i < len(values) else ""
+            if isinstance(val, (list, tuple)):
+                val = "\n".join(str(v) for v in val)
+            cells[i].text = str(val)
+
+
 def build_docx(
     data: Any, out_dir: pathlib.Path, niche: dict, base_name: str
 ) -> list[pathlib.Path]:
@@ -306,9 +360,10 @@ def build_docx(
 
     Accepts either:
       {"title", "meta": {k: v}, "sections": [{"heading", "level", "paragraphs":
-       [...], "bullets": [...]}]}
+       [...], "bullets": [...], "table": {"columns", "rows"}}]}
     or a flat {"title", "body": "markdown-ish text"} which is split on blank
-    lines and ## headings.
+    lines and ## headings. A section may also carry a "table" spec, and the
+    document may carry a top-level "tables": [spec, ...] appended after sections.
     """
     from docx import Document
     from docx.shared import Pt
@@ -337,6 +392,12 @@ def build_docx(
                 doc.add_paragraph(str(para))
             for bullet in sec.get("bullets", []):
                 doc.add_paragraph(str(bullet), style="List Bullet")
+            if sec.get("table"):
+                _add_docx_table(doc, sec["table"])
+    elif data.get("tables") or data.get("table") or data.get("rows"):
+        # Pure-table deliverable with no prose sections (e.g. content plan);
+        # the actual table(s) are rendered by the top-level block below.
+        pass
     else:
         body = data.get("body", "")
         if isinstance(body, list):
@@ -358,6 +419,19 @@ def build_docx(
                         doc.add_paragraph(line, style="List Bullet")
             else:
                 doc.add_paragraph(block)
+
+    # Top-level tables (a single spec via "table" or a list via "tables"),
+    # rendered after any sections/body. Used by table-first deliverables.
+    top_tables = data.get("tables")
+    if isinstance(top_tables, dict):  # tolerate a single spec under "tables"
+        top_tables = [top_tables]
+    if not top_tables and data.get("table"):
+        top_tables = [data["table"]]
+    if not top_tables and isinstance(data, dict) and data.get("rows"):
+        # Flat table deliverable: {"title", "columns": [...], "rows": [[...]]}.
+        top_tables = [{"columns": data.get("columns"), "rows": data["rows"]}]
+    for spec in (top_tables or []):
+        _add_docx_table(doc, spec)
 
     # Make body text a touch larger for readability.
     style = doc.styles["Normal"]
