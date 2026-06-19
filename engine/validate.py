@@ -201,8 +201,9 @@ def _check_no_duplicates(result: Any, check: dict) -> CheckResult:
     field = check.get("field", "sections")
     threshold = float(check.get("threshold", 0.9))
     blocks = _resolve_field(result, field)
+    label = f"no_duplicates[{field}]"
     if not isinstance(blocks, list) or len(blocks) < 2:
-        return ("no_duplicates", True, "fewer than 2 blocks — nothing to compare")
+        return (label, True, "fewer than 2 blocks — nothing to compare")
     texts = [_norm(_collect_text(b)) for b in blocks]
     dupes: list[str] = []
     for i in range(len(texts)):

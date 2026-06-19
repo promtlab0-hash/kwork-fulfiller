@@ -107,6 +107,19 @@ python3 fulfill.py
 | `--dry-run` | без вызова Claude — подставить осмысленную заглушку |
 | `--review` | вторая ИИ-прогонка на смысл (не в `--dry-run`) |
 
+## Тесты
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
+
+Покрывают: парсинг JSON из ответа модели (`parse_json` — фенсы, проза вокруг, битые
+спаны), валидаторы (`no_duplicates`, `completeness`, `has_sections`, `no_placeholders`,
+`no_ai_artifacts`…), билдер DOCX (секции, таблицы, плоский формат) и **dry-run по всем 10
+профилям** — последнее ловит рассинхрон «проверка ↔ заглушка» (как было с `content_plan`).
+Те же тесты гоняет CI (`.github/workflows/ci.yml`) на каждый push/PR.
+
 ## Запуск через GitHub Actions
 
 Публичный репозиторий = бесплатные минуты Actions; генерацию можно запускать из браузера.

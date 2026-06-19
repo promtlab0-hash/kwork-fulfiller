@@ -69,19 +69,28 @@ def call_claude(
         return _strip_fences(stub)
 
     claude_bin = find_claude_bin()
-    proc = subprocess.run(
-        [claude_bin, "-p", "--max-turns", str(max_turns), "--output-format", "text"],
-        input=prompt,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        env={**os.environ, "CLAUDE_CODE_NO_TELEMETRY": "1"},
-    )
+    try:
+        proc = subprocess.run(
+            [claude_bin, "-p", "--max-turns", str(max_turns), "--output-format", "text"],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env={**os.environ, "CLAUDE_CODE_NO_TELEMETRY": "1"},
+        )
+    except subprocess.TimeoutExpired:
+        raise LLMError(
+            f"claude CLI не ответил за {timeout}s (таймаут). "
+            "Повторите позже или уменьшите объём задания."
+        )
     if proc.returncode != 0:
         raise LLMError(
             f"claude CLI exit={proc.returncode}: {proc.stderr.strip()[:500]}"
         )
-    return _strip_fences(proc.stdout)
+    cleaned = _strip_fences(proc.stdout)
+    if not cleaned.strip():
+        raise LLMError("claude CLI вернул пустой ответ (возможно, rate limit).")
+    return cleaned
 
 
 def parse_json(text: str) -> dict | list:
@@ -96,7 +105,9 @@ def parse_json(text: str) -> dict | list:
     except json.JSONDecodeError:
         pass
 
-    # Find the widest balanced object or array span.
+    # Find the widest balanced object or array span. Try each candidate
+    # (leftmost first) and return the first that parses — a single malformed
+    # span shouldn't sink a response that also carries a valid one.
     candidates: list[tuple[int, int]] = []
     for open_ch, close_ch in (("{", "}"), ("[", "]")):
         start = text.find(open_ch)
@@ -106,6 +117,12 @@ def parse_json(text: str) -> dict | list:
     if not candidates:
         raise ValueError(f"No JSON object/array found in output: {text[:200]!r}")
 
-    start, end = min(candidates, key=lambda c: c[0])
-    snippet = text[start : end + 1]
-    return json.loads(snippet)
+    last_err: json.JSONDecodeError | None = None
+    for start, end in sorted(candidates, key=lambda c: c[0]):
+        try:
+            return json.loads(text[start : end + 1])
+        except json.JSONDecodeError as exc:
+            last_err = exc
+    raise ValueError(
+        f"Found JSON-like spans but none parsed ({last_err}): {text[:200]!r}"
+    )

@@ -1,0 +1,28 @@
+name: ci
+
+# Автопроверка пайплайна: юнит-тесты + dry-run по всем профилям.
+# Ловит регрессии (рассинхрон checks↔stub, баги билдеров/парсера) до сдачи.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dev deps
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests (units + dry-run all 10 profiles)
+        run: pytest -q

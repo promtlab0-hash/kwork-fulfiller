@@ -95,9 +95,20 @@ def _format_template(template_text: str, settings: dict, brief: str) -> str:
 
 def build_prompt(niche: dict, brief: str) -> str:
     """Compose the full prompt: template + settings + buyer brief."""
-    template_rel = niche["create"]["template"]
-    template_path = ROOT / template_rel
-    template_text = template_path.read_text(encoding="utf-8")
+    create = niche.get("create")
+    if not isinstance(create, dict) or not create.get("template"):
+        raise SystemExit(
+            f"Профиль {niche.get('id', '?')!r} повреждён: нет блока "
+            f"create.template."
+        )
+    template_path = ROOT / create["template"]
+    try:
+        template_text = template_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise SystemExit(
+            f"Шаблон не найден: {template_path} "
+            f"(профиль {niche.get('id', '?')!r})."
+        )
     settings = niche.get("settings", {})
     filled = _format_template(template_text, settings, brief)
 
@@ -225,7 +236,7 @@ def run(niche_id: str, brief_arg: str, out_dir: str, overrides: dict,
         (out_path / f"{niche['id']}_raw.txt").write_text(raw, encoding="utf-8")
         return 3
 
-    builder = outputs.get_builder(niche["create"]["builder"])
+    builder = outputs.get_builder(niche["create"].get("builder", ""))
     base_name = niche["id"]
     files = builder(result, out_path, niche, base_name)
 

@@ -26,11 +26,6 @@
     {
       "type": "min_count",
       "field": "sections",
-      "value": 1
-    },
-    {
-      "type": "min_count",
-      "field": "sections",
       "value": 5
     },
     {
