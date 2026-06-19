@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import re
 import sys
@@ -251,8 +252,9 @@ def run(niche_id: str, brief_arg: str, out_dir: str, overrides: dict,
     response_format = niche["create"].get("response_format", "json")
 
     stub = dry_run_stub(niche, brief) if dry_run else None
-    print(f"[{'dry-run' if dry_run else 'live'}] вызываю Claude для ниши '{niche['id']}'…")
-    raw = llm.call_claude(prompt, dry_run=dry_run, stub=stub)
+    backend = "dry-run" if dry_run else (os.environ.get("LLM_BACKEND") or "claude")
+    print(f"[{backend}] генерирую нишу '{niche['id']}'…")
+    raw = llm.generate(prompt, dry_run=dry_run, stub=stub)
 
     try:
         result = parse_result(raw, response_format)
@@ -313,6 +315,21 @@ def interactive() -> int:
 # --------------------------------------------------------------------------- #
 
 
+def load_dotenv(path: pathlib.Path | None = None) -> None:
+    """Minimal .env loader (no dependency): KEY=VALUE lines, env wins if set."""
+    env_path = path or (ROOT / ".env")
+    if not env_path.exists():
+        return
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="kwork-fulfiller — генератор+проверка результата заказа")
     parser.add_argument("--niche", "--profile", dest="niche",
@@ -325,7 +342,21 @@ def main(argv: list[str] | None = None) -> int:
                         help="без вызова Claude — подставить осмысленную заглушку")
     parser.add_argument("--review", action="store_true",
                         help="вторая ИИ-прогонка на смысл (не в dry-run)")
+    parser.add_argument("--backend", choices=["claude", "openai"],
+                        help="бэкенд генерации (или env LLM_BACKEND; по умолч. claude)")
+    parser.add_argument("--model", help="модель для openai-бэкенда (или env LLM_MODEL)")
+    parser.add_argument("--base-url", dest="base_url",
+                        help="endpoint openai-бэкенда (или env LLM_BASE_URL)")
     args = parser.parse_args(argv)
+
+    # .env (если есть) + флаги перебивают незаданные переменные окружения.
+    load_dotenv()
+    if args.backend:
+        os.environ["LLM_BACKEND"] = args.backend
+    if args.model:
+        os.environ["LLM_MODEL"] = args.model
+    if args.base_url:
+        os.environ["LLM_BASE_URL"] = args.base_url
 
     if not args.niche:
         return interactive()

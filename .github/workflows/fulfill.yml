@@ -28,6 +28,24 @@ on:
         description: "Переопределение настроек: k=v,k=v (опционально)"
         required: false
         type: string
+      backend:
+        description: "Бэкенд генерации"
+        required: false
+        default: openai
+        type: choice
+        options:
+          - openai
+          - claude
+      model:
+        description: "Модель (для openai-бэкенда), напр. qwen/qwen-2.5-72b-instruct:free"
+        required: false
+        default: "qwen/qwen-2.5-72b-instruct:free"
+        type: string
+      base_url:
+        description: "Endpoint (для openai-бэкенда)"
+        required: false
+        default: "https://openrouter.ai/api/v1"
+        type: string
 
 jobs:
   fulfill:
@@ -45,6 +63,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Install Claude Code CLI
+        if: ${{ inputs.backend == 'claude' }}
         run: npm install -g @anthropic-ai/claude-code
 
       - name: Write brief to file
@@ -69,6 +88,11 @@ jobs:
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           CLAUDE_CODE_NO_TELEMETRY: "1"
+          LLM_BACKEND: ${{ inputs.backend }}
+          LLM_MODEL: ${{ inputs.model }}
+          LLM_BASE_URL: ${{ inputs.base_url }}
+          # Ключ OpenRouter (или иного OpenAI-совместимого провайдера).
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
         run: |
           python fulfill.py \
             --niche "${{ inputs.niche }}" \

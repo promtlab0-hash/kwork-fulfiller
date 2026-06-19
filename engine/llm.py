@@ -93,6 +93,117 @@ def call_claude(
     return cleaned
 
 
+def _call_openai_compatible(
+    prompt: str,
+    *,
+    base_url: str,
+    api_key: str,
+    model: str,
+    timeout: int = DEFAULT_TIMEOUT,
+    temperature: float = 0.7,
+) -> str:
+    """Call any OpenAI-compatible /chat/completions endpoint and return text.
+
+    Works with OpenRouter, a local Ollama (`/v1`), GitHub Models, or anything
+    else that speaks the OpenAI schema. Auth is a Bearer token (Ollama ignores
+    it but still wants a non-empty value).
+    """
+    import requests  # local import keeps the claude/dry-run path dependency-free
+
+    url = base_url.rstrip("/") + "/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": temperature,
+    }
+    try:
+        resp = requests.post(url, json=payload, headers=headers, timeout=timeout)
+    except requests.Timeout:
+        raise LLMError(f"{model} не ответил за {timeout}s (таймаут).")
+    except requests.RequestException as exc:
+        raise LLMError(f"сеть/endpoint недоступен ({base_url}): {exc}")
+
+    if resp.status_code != 200:
+        raise LLMError(
+            f"{model} HTTP {resp.status_code}: {resp.text.strip()[:500]}"
+        )
+    try:
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"]
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
+        raise LLMError(f"неожиданный ответ от {model}: {resp.text.strip()[:300]} ({exc})")
+
+    cleaned = _strip_fences(content or "")
+    if not cleaned.strip():
+        raise LLMError(f"{model} вернул пустой ответ.")
+    return cleaned
+
+
+def _resolve_backend(
+    backend: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
+) -> dict:
+    """Collect backend config from explicit args first, then env vars."""
+    backend = (backend or os.environ.get("LLM_BACKEND") or "claude").strip().lower()
+    return {
+        "backend": backend,
+        "base_url": base_url or os.environ.get("LLM_BASE_URL", ""),
+        "model": model or os.environ.get("LLM_MODEL", ""),
+        "api_key": (
+            os.environ.get("LLM_API_KEY")
+            or os.environ.get("OPENROUTER_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+            or ""
+        ),
+    }
+
+
+def generate(
+    prompt: str,
+    *,
+    dry_run: bool = False,
+    stub: str | None = None,
+    timeout: int = DEFAULT_TIMEOUT,
+    backend: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
+) -> str:
+    """Backend-agnostic entry point used by the pipeline.
+
+    dry-run → stub; otherwise dispatch by LLM_BACKEND: `claude` (CLI, default)
+    or `openai` (any OpenAI-compatible endpoint — OpenRouter/Ollama/GitHub
+    Models). Config comes from explicit args, then environment variables.
+    """
+    if dry_run:
+        if stub is None:
+            raise LLMError("dry_run=True requires a stub to substitute.")
+        return _strip_fences(stub)
+
+    cfg = _resolve_backend(backend, base_url, model)
+    if cfg["backend"] == "claude":
+        return call_claude(prompt, dry_run=False, timeout=timeout)
+    if cfg["backend"] == "openai":
+        if not cfg["base_url"] or not cfg["model"]:
+            raise LLMError(
+                "LLM_BACKEND=openai требует LLM_BASE_URL и LLM_MODEL "
+                "(см. .env.example)."
+            )
+        return _call_openai_compatible(
+            prompt,
+            base_url=cfg["base_url"],
+            api_key=cfg["api_key"],
+            model=cfg["model"],
+            timeout=timeout,
+        )
+    raise LLMError(
+        f"неизвестный LLM_BACKEND={cfg['backend']!r} (ожидается claude|openai)."
+    )
+
+
 def parse_json(text: str) -> dict | list:
     """Parse JSON from model output, tolerating surrounding prose.
 

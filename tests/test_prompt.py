@@ -21,6 +21,20 @@ def test_quality_standard_in_every_niche():
         assert "Стандарт качества текста" in prompt, niche_id
 
 
+def test_load_dotenv_sets_unset_keys(tmp_path, monkeypatch):
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "# comment\nLLM_BACKEND=openai\nLLM_MODEL=\"qwen2.5\"\nBROKEN_LINE\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("LLM_BACKEND", raising=False)
+    monkeypatch.setenv("LLM_MODEL", "already-set")
+    fulfill.load_dotenv(env_file)
+    assert fulfill.os.environ["LLM_BACKEND"] == "openai"
+    # Existing env value must win over .env.
+    assert fulfill.os.environ["LLM_MODEL"] == "already-set"
+
+
 def test_common_advisory_are_non_blocking():
     # Both advisory checks must be declared critical: False.
     assert all(c["critical"] is False for c in fulfill.COMMON_ADVISORY)

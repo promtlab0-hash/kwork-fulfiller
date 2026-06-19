@@ -128,16 +128,55 @@ pytest -q
 профилям** — последнее ловит рассинхрон «проверка ↔ заглушка» (как было с `content_plan`).
 Те же тесты гоняет CI (`.github/workflows/ci.yml`) на каждый push/PR.
 
+## Бэкенды генерации (Claude / Qwen / любой OpenAI-совместимый)
+
+Движок провайдеро-независимый. Бэкенд выбирается переменными окружения (или флагами
+`--backend/--model/--base-url`, или файлом `.env` — см. `.env.example`).
+Приоритет: флаги CLI → переменные окружения → `.env`.
+
+| Бэкенд | Чем хорош | Минусы | Как включить |
+|---|---|---|---|
+| **Claude** (по умолч.) | топ-качество | нужен залогиненный `claude` CLI / платный токен | ничего не задавать |
+| **OpenRouter + Qwen** | бесплатно, в облаке и локально | лимиты free-тира, потолок токенов | `LLM_BACKEND=openai`, ключ OpenRouter |
+| **Ollama + Qwen** | бесплатно, безлимитно, оффлайн | качество ниже, нужен запас RAM | `LLM_BACKEND=openai`, локальный Ollama |
+
+```bash
+# Qwen через OpenRouter (ключ: https://openrouter.ai/keys):
+LLM_BACKEND=openai LLM_BASE_URL=https://openrouter.ai/api/v1 \
+LLM_API_KEY=sk-or-... LLM_MODEL=qwen/qwen-2.5-72b-instruct:free \
+python3 fulfill.py --niche price_list --brief briefs/01_price_list.txt --out ./out
+
+# Qwen локально через Ollama (ollama pull qwen2.5):
+python3 fulfill.py --niche price_list --brief briefs/01_price_list.txt --out ./out \
+  --backend openai --base-url http://localhost:11434/v1 --model qwen2.5
+
+# Claude (по умолчанию, локальный вход):
+python3 fulfill.py --niche price_list --brief briefs/01_price_list.txt --out ./out
+```
+
+Удобнее — скопировать `.env.example` в `.env` и раскомментировать нужный блок.
+Набор бесплатных Qwen на OpenRouter меняется — актуальные ищите на
+`openrouter.ai/models?q=qwen` (помечены `:free`). Большие ниши (контент-план на 28 постов)
+могут упереться в потолок токенов free-тира.
+
 ## Запуск через GitHub Actions
 
 Публичный репозиторий = бесплатные минуты Actions; генерацию можно запускать из браузера.
+В форме `Run workflow` есть выбор `backend`: **openai** (по умолчанию, бесплатный Qwen через
+OpenRouter) или **claude**.
 
-1. Получите токен CLI: `claude setup-token` → скопируйте OAuth-токен.
-2. `Settings → Secrets and variables → Actions → New repository secret`:
-   Name `CLAUDE_CODE_OAUTH_TOKEN`, Secret — токен из шага 1.
-3. `Actions → fulfill → Run workflow`: выберите профиль, вставьте бриф
-   (и при желании `settings` вида `desc_max=600`).
-4. Готовые файлы — в **Artifacts** запуска (архив `out/`).
+**Вариант A — Qwen/OpenRouter (бесплатно, рекомендуется):**
+1. Ключ: https://openrouter.ai/keys → добавьте секрет `LLM_API_KEY`
+   (`Settings → Secrets and variables → Actions → New repository secret`).
+2. `Actions → fulfill → Run workflow`: профиль, бриф, `backend=openai`,
+   при желании поменяйте `model` (по умолч. `qwen/qwen-2.5-72b-instruct:free`).
+
+**Вариант B — Claude:**
+1. `claude setup-token` → секрет `CLAUDE_CODE_OAUTH_TOKEN`.
+2. `Run workflow` с `backend=claude`.
+
+Готовые файлы — в **Artifacts** запуска (архив `out/`). Ollama в облаке недоступен — он только
+для локального запуска.
 
 ## Структура проекта
 
