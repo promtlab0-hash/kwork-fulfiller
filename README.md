@@ -128,9 +128,35 @@ pytest -q
 профилям** — последнее ловит рассинхрон «проверка ↔ заглушка» (как было с `content_plan`).
 Те же тесты гоняет CI (`.github/workflows/ci.yml`) на каждый push/PR.
 
-## Бэкенды генерации (Claude / Qwen / любой OpenAI-совместимый)
+## Каскад провайдеров (инструмент не упирается в лимит)
 
-Движок провайдеро-независимый. Бэкенд выбирается переменными окружения (или флагами
+Чтобы скрипт **никогда не вставал из-за лимита**, бэкенд — это цепочка провайдеров с
+**авто-переключением**: упёрся лимит (HTTP 429) или ошибка у одного — движок сам переходит к
+следующему. Порядок — «умнее → проще»; первым идёт самый качественный, при исчерпании квоты
+работа продолжается на запасном.
+
+Два уровня запаса: (1) **ротация моделей внутри GitHub Models** (gpt-4o → Llama → DeepSeek — у
+каждой свой суточный лимит, сбрасывается ежедневно); (2) прыжок на **другой провайдер**
+(OpenRouter/Groq/Gemini — независимые бесплатные квоты); (3) дома — **локальный Ollama** как
+реально безлимитный нижний этаж. Для объёма «несколько документов в день» стену практически не
+увидеть.
+
+```bash
+# По умолчанию (встроенный каскад github→openrouter→ollama):
+GITHUB_TOKEN=ghp_... python3 fulfill.py --niche price_list --brief briefs/01_price_list.txt --out ./out
+
+# Свой каскад:
+python3 fulfill.py --niche kp --brief briefs/06_kp.txt --out ./out \
+  --chain "github:openai/gpt-4o,openrouter:qwen/qwen-2.5-72b-instruct:free,ollama:qwen2.5"
+```
+
+Линк без ключа пропускается. Ключи (любой опционален): `GITHUB_TOKEN`, `OPENROUTER_API_KEY`
+(openrouter.ai/keys), `GROQ_API_KEY`, `GEMINI_API_KEY`. **С айфона:** запускайте через GitHub
+Actions (см. ниже) — там GitHub Models работает бесплатно встроенным токеном, без настройки.
+
+## Бэкенды генерации (одиночный режим)
+
+Движок провайдеро-независимый. Можно зафиксировать один бэкенд переменными окружения (или флагами
 `--backend/--model/--base-url`, или файлом `.env` — см. `.env.example`).
 Приоритет: флаги CLI → переменные окружения → `.env`.
 
@@ -161,22 +187,19 @@ python3 fulfill.py --niche price_list --brief briefs/01_price_list.txt --out ./o
 
 ## Запуск через GitHub Actions
 
-Публичный репозиторий = бесплатные минуты Actions; генерацию можно запускать из браузера.
-В форме `Run workflow` есть выбор `backend`: **openai** (по умолчанию, бесплатный Qwen через
-OpenRouter) или **claude**.
+Запуск из браузера — **работает и с компьютера, и с айфона** (зашли в репозиторий → Actions →
+Run workflow → вставили бриф → забрали DOCX из Artifacts).
 
-**Вариант A — Qwen/OpenRouter (бесплатно, рекомендуется):**
-1. Ключ: https://openrouter.ai/keys → добавьте секрет `LLM_API_KEY`
-   (`Settings → Secrets and variables → Actions → New repository secret`).
-2. `Actions → fulfill → Run workflow`: профиль, бриф, `backend=openai`,
-   при желании поменяйте `model` (по умолч. `qwen/qwen-2.5-72b-instruct:free`).
+**Работает сразу, без ключей:** воркфлоу имеет `permissions: models: read`, поэтому встроенный
+`GITHUB_TOKEN` бесплатно обращается к **GitHub Models** — генерация идёт из коробки. Поле `chain`
+оставьте пустым (используется встроенный каскад) или задайте свой.
 
-**Вариант B — Claude:**
-1. `claude setup-token` → секрет `CLAUDE_CODE_OAUTH_TOKEN`.
-2. `Run workflow` с `backend=claude`.
+**Больше запаса против лимитов (по желанию):** добавьте секреты
+`Settings → Secrets and variables → Actions`: `OPENROUTER_API_KEY`, `GROQ_API_KEY`,
+`GEMINI_API_KEY` — соответствующие линки каскада подключатся автоматически.
 
-Готовые файлы — в **Artifacts** запуска (архив `out/`). Ollama в облаке недоступен — он только
-для локального запуска.
+Готовые файлы — в **Artifacts** запуска (архив `out/`). Ollama в облаке недоступен (только
+локально); каскад просто пропустит его в Actions.
 
 ## Структура проекта
 

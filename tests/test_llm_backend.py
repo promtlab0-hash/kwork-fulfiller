@@ -105,8 +105,9 @@ def test_generate_openai_missing_config_raises(monkeypatch):
         llm.generate("p")
 
 
-def test_generate_claude_backend_is_default(monkeypatch):
-    monkeypatch.delenv("LLM_BACKEND", raising=False)
+def test_generate_claude_backend_explicit(monkeypatch):
+    monkeypatch.setenv("LLM_BACKEND", "claude")
+    monkeypatch.delenv("LLM_CHAIN", raising=False)
     called = {}
 
     def fake_claude(*a, **k):
@@ -120,5 +121,104 @@ def test_generate_claude_backend_is_default(monkeypatch):
 
 def test_generate_unknown_backend_raises(monkeypatch):
     monkeypatch.setenv("LLM_BACKEND", "weird")
+    monkeypatch.delenv("LLM_CHAIN", raising=False)
     with pytest.raises(llm.LLMError):
         llm.generate("p")
+
+
+# --------------------------------------------------------------------------- #
+# Cascade / failover
+# --------------------------------------------------------------------------- #
+
+
+def _clear_chain_env(monkeypatch):
+    for v in ("LLM_CHAIN", "LLM_BACKEND", "LLM_BASE_URL", "LLM_MODEL"):
+        monkeypatch.delenv(v, raising=False)
+
+
+def test_parse_chain_provider_model():
+    links = llm._parse_chain("github:openai/gpt-4o, ollama:qwen2.5 , bogus:x")
+    assert links == [("github", "openai/gpt-4o"), ("ollama", "qwen2.5")]
+
+
+def test_parse_chain_uses_default_model_when_omitted():
+    links = llm._parse_chain("github")
+    assert links == [("github", "openai/gpt-4o")]
+
+
+def test_cascade_falls_over_on_429(monkeypatch):
+    _clear_chain_env(monkeypatch)
+    monkeypatch.setenv("LLM_CHAIN", "github:m1,openrouter:m2")
+    monkeypatch.setenv("GITHUB_TOKEN", "g")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "o")
+
+    def post(url, json=None, headers=None, timeout=None):
+        model = json["model"]
+
+        class R:
+            status_code = 429 if model == "m1" else 200
+            text = "rate limited"
+
+            def json(self):
+                return _ok_payload('{"served": "m2"}')
+        return R()
+
+    fake = types.ModuleType("requests")
+    fake.post = post
+    fake.Timeout = type("T", (Exception,), {})
+    fake.RequestException = type("RE", (Exception,), {})
+    monkeypatch.setitem(sys.modules, "requests", fake)
+
+    events = []
+    out = llm.generate("p", on_event=events.append)
+    assert out == '{"served": "m2"}'
+    assert any("429" in e or "лимит" in e for e in events)
+    assert any("✓ openrouter:m2" in e for e in events)
+
+
+def test_cascade_skips_provider_without_key(monkeypatch):
+    _clear_chain_env(monkeypatch)
+    monkeypatch.setenv("LLM_CHAIN", "openrouter:m1,github:m2")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.setenv("GITHUB_TOKEN", "g")
+
+    captured = {}
+
+    def post(url, json=None, headers=None, timeout=None):
+        captured["model"] = json["model"]
+
+        class R:
+            status_code = 200
+            text = ""
+
+            def json(self):
+                return _ok_payload('{"ok": 1}')
+        return R()
+
+    fake = types.ModuleType("requests")
+    fake.post = post
+    fake.Timeout = type("T", (Exception,), {})
+    fake.RequestException = type("RE", (Exception,), {})
+    monkeypatch.setitem(sys.modules, "requests", fake)
+
+    out = llm.generate("p")
+    assert out == '{"ok": 1}'
+    # openrouter skipped (no key) → only github:m2 actually called.
+    assert captured["model"] == "m2"
+
+
+def test_cascade_all_fail_raises(monkeypatch):
+    _clear_chain_env(monkeypatch)
+    monkeypatch.setenv("LLM_CHAIN", "github:m1")
+    monkeypatch.setenv("GITHUB_TOKEN", "g")
+    _fake_requests(monkeypatch, status=500, body="boom")
+    with pytest.raises(llm.LLMError):
+        llm.generate("p")
+
+
+def test_default_chain_used_when_unset(monkeypatch):
+    _clear_chain_env(monkeypatch)
+    links = llm._resolve_chain()
+    assert links[0][0] == "github"  # smart provider first
+    assert links[-1][0] == "ollama"  # unlimited local floor last

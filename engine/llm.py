@@ -21,7 +21,15 @@ DEFAULT_TIMEOUT = 600
 
 
 class LLMError(RuntimeError):
-    """Raised when the Claude CLI cannot be located or fails to respond."""
+    """Raised when a backend cannot be reached or fails to respond.
+
+    `status` carries the HTTP status code for OpenAI-compatible failures (e.g.
+    429 rate-limit), letting the cascade tell limits apart from other errors.
+    """
+
+    def __init__(self, message: str, *, status: int | None = None):
+        super().__init__(message)
+        self.status = status
 
 
 def find_claude_bin() -> str:
@@ -128,7 +136,8 @@ def _call_openai_compatible(
 
     if resp.status_code != 200:
         raise LLMError(
-            f"{model} HTTP {resp.status_code}: {resp.text.strip()[:500]}"
+            f"{model} HTTP {resp.status_code}: {resp.text.strip()[:500]}",
+            status=resp.status_code,
         )
     try:
         data = resp.json()
@@ -142,24 +151,123 @@ def _call_openai_compatible(
     return cleaned
 
 
-def _resolve_backend(
+# Provider presets: how to reach each backend and where its key lives. The key
+# is read from the first non-empty env var listed in `key_envs`.
+PROVIDERS: dict[str, dict] = {
+    "claude": {"kind": "claude"},
+    "github": {
+        "kind": "openai",
+        "base_url": "https://models.github.ai/inference",
+        "key_envs": ["LLM_API_KEY", "GITHUB_TOKEN"],
+        "default_model": "openai/gpt-4o",
+    },
+    "openrouter": {
+        "kind": "openai",
+        "base_url": "https://openrouter.ai/api/v1",
+        "key_envs": ["OPENROUTER_API_KEY", "LLM_API_KEY"],
+        "default_model": "qwen/qwen-2.5-72b-instruct:free",
+    },
+    "groq": {
+        "kind": "openai",
+        "base_url": "https://api.groq.com/openai/v1",
+        "key_envs": ["GROQ_API_KEY"],
+        "default_model": "llama-3.3-70b-versatile",
+    },
+    "gemini": {
+        "kind": "openai",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "key_envs": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+        "default_model": "gemini-2.0-flash",
+    },
+    "ollama": {
+        "kind": "openai",
+        "base_url": "http://localhost:11434/v1",
+        "key_envs": [],  # local, no key
+        "default_model": "qwen2.5",
+        "no_key_ok": True,
+    },
+}
+
+# Smart → simple. Rotates models inside GitHub Models (separate daily quotas),
+# then jumps to other providers, ending at a local Ollama floor (if running).
+DEFAULT_CHAIN = (
+    "github:openai/gpt-4o,"
+    "github:meta/Llama-3.3-70B-Instruct,"
+    "github:deepseek/DeepSeek-V3-0324,"
+    "openrouter:qwen/qwen-2.5-72b-instruct:free,"
+    "ollama:qwen2.5"
+)
+
+
+def _provider_key(provider: str) -> str:
+    for env_name in PROVIDERS.get(provider, {}).get("key_envs", []):
+        val = os.environ.get(env_name)
+        if val:
+            return val
+    return ""
+
+
+def _parse_chain(chain_str: str | None) -> list[tuple[str, str]]:
+    """Turn 'github:gpt-4o, ollama:qwen2.5' into [(provider, model), …]."""
+    links: list[tuple[str, str]] = []
+    for raw in (chain_str or "").split(","):
+        token = raw.strip()
+        if not token:
+            continue
+        provider, _, model = token.partition(":")
+        provider = provider.strip().lower()
+        if provider not in PROVIDERS:
+            continue
+        model = model.strip() or PROVIDERS[provider].get("default_model", "")
+        links.append((provider, model))
+    return links
+
+
+def _resolve_chain(
     backend: str | None = None,
     base_url: str | None = None,
     model: str | None = None,
-) -> dict:
-    """Collect backend config from explicit args first, then env vars."""
-    backend = (backend or os.environ.get("LLM_BACKEND") or "claude").strip().lower()
-    return {
-        "backend": backend,
-        "base_url": base_url or os.environ.get("LLM_BASE_URL", ""),
-        "model": model or os.environ.get("LLM_MODEL", ""),
-        "api_key": (
+) -> list[tuple[str, str]]:
+    """Decide the failover chain from explicit args → env → sensible default."""
+    # Explicit single backend (flag/env) keeps the old one-shot behaviour.
+    single = backend or os.environ.get("LLM_BACKEND")
+    if single and not os.environ.get("LLM_CHAIN"):
+        if single == "claude":
+            return [("claude", "")]
+        # openai single backend: rely on LLM_BASE_URL/LLM_MODEL (back-compat).
+        return [("__custom__", model or os.environ.get("LLM_MODEL", ""))]
+    return _parse_chain(os.environ.get("LLM_CHAIN") or DEFAULT_CHAIN)
+
+
+def _call_link(provider: str, model: str, prompt: str, timeout: int) -> str:
+    """Invoke one chain link. Raises LLMError (with .status) on failure."""
+    if provider == "claude":
+        return call_claude(prompt, dry_run=False, timeout=timeout)
+    if provider == "__custom__":
+        # Single openai backend via raw LLM_BASE_URL/LLM_API_KEY (back-compat).
+        base = os.environ.get("LLM_BASE_URL", "")
+        if not base or not model:
+            raise LLMError("LLM_BACKEND=openai требует LLM_BASE_URL и LLM_MODEL.")
+        key = (
             os.environ.get("LLM_API_KEY")
             or os.environ.get("OPENROUTER_API_KEY")
             or os.environ.get("OPENAI_API_KEY")
             or ""
-        ),
-    }
+        )
+        return _call_openai_compatible(
+            prompt, base_url=base, api_key=key, model=model, timeout=timeout
+        )
+    spec = PROVIDERS[provider]
+    key = _provider_key(provider)
+    if not key and not spec.get("no_key_ok"):
+        raise LLMError(f"{provider}: нет ключа (пропускаю)")
+    return _call_openai_compatible(
+        prompt,
+        base_url=spec["base_url"],
+        api_key=key or "x",  # Ollama ignores it but wants a non-empty value
+        model=model,
+        timeout=timeout,
+    )
 
 
 def generate(
@@ -171,37 +279,39 @@ def generate(
     backend: str | None = None,
     base_url: str | None = None,
     model: str | None = None,
+    on_event=None,
 ) -> str:
-    """Backend-agnostic entry point used by the pipeline.
+    """Backend-agnostic entry point with automatic failover.
 
-    dry-run → stub; otherwise dispatch by LLM_BACKEND: `claude` (CLI, default)
-    or `openai` (any OpenAI-compatible endpoint — OpenRouter/Ollama/GitHub
-    Models). Config comes from explicit args, then environment variables.
+    dry-run → stub. Otherwise walk the failover chain (LLM_CHAIN, or a sensible
+    default): the first link that succeeds wins; on a rate-limit/quota/error the
+    next link is tried, so the tool never stops on one provider's limit. A link
+    whose provider has no API key is skipped. `on_event(msg)` (optional) reports
+    which link is used / skipped for logging.
     """
     if dry_run:
         if stub is None:
             raise LLMError("dry_run=True requires a stub to substitute.")
         return _strip_fences(stub)
 
-    cfg = _resolve_backend(backend, base_url, model)
-    if cfg["backend"] == "claude":
-        return call_claude(prompt, dry_run=False, timeout=timeout)
-    if cfg["backend"] == "openai":
-        if not cfg["base_url"] or not cfg["model"]:
-            raise LLMError(
-                "LLM_BACKEND=openai требует LLM_BASE_URL и LLM_MODEL "
-                "(см. .env.example)."
-            )
-        return _call_openai_compatible(
-            prompt,
-            base_url=cfg["base_url"],
-            api_key=cfg["api_key"],
-            model=cfg["model"],
-            timeout=timeout,
-        )
-    raise LLMError(
-        f"неизвестный LLM_BACKEND={cfg['backend']!r} (ожидается claude|openai)."
-    )
+    chain = _resolve_chain(backend, base_url, model)
+    if not chain:
+        raise LLMError("пустая цепочка бэкендов (проверьте LLM_CHAIN).")
+
+    errors: list[str] = []
+    for provider, link_model in chain:
+        label = provider if provider in ("claude", "__custom__") else f"{provider}:{link_model}"
+        try:
+            result = _call_link(provider, link_model, prompt, timeout)
+            if on_event:
+                on_event(f"✓ {label}")
+            return result
+        except LLMError as exc:
+            note = "лимит" if getattr(exc, "status", None) == 429 else "ошибка"
+            errors.append(f"{label}: {exc}")
+            if on_event:
+                on_event(f"✗ {label} ({note}) → следующий")
+    raise LLMError("все бэкенды в цепочке недоступны:\n  " + "\n  ".join(errors))
 
 
 def parse_json(text: str) -> dict | list:

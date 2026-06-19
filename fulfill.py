@@ -252,9 +252,12 @@ def run(niche_id: str, brief_arg: str, out_dir: str, overrides: dict,
     response_format = niche["create"].get("response_format", "json")
 
     stub = dry_run_stub(niche, brief) if dry_run else None
-    backend = "dry-run" if dry_run else (os.environ.get("LLM_BACKEND") or "claude")
-    print(f"[{backend}] генерирую нишу '{niche['id']}'…")
-    raw = llm.generate(prompt, dry_run=dry_run, stub=stub)
+    tag = "dry-run" if dry_run else "каскад провайдеров"
+    print(f"[{tag}] генерирую нишу '{niche['id']}'…")
+    raw = llm.generate(
+        prompt, dry_run=dry_run, stub=stub,
+        on_event=lambda m: print(f"  {m}", file=sys.stderr),
+    )
 
     try:
         result = parse_result(raw, response_format)
@@ -342,8 +345,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="без вызова Claude — подставить осмысленную заглушку")
     parser.add_argument("--review", action="store_true",
                         help="вторая ИИ-прогонка на смысл (не в dry-run)")
+    parser.add_argument("--chain",
+                        help="каскад провайдеров 'github:gpt-4o,ollama:qwen2.5' (или env LLM_CHAIN)")
     parser.add_argument("--backend", choices=["claude", "openai"],
-                        help="бэкенд генерации (или env LLM_BACKEND; по умолч. claude)")
+                        help="одиночный бэкенд (или env LLM_BACKEND); перебивает каскад")
     parser.add_argument("--model", help="модель для openai-бэкенда (или env LLM_MODEL)")
     parser.add_argument("--base-url", dest="base_url",
                         help="endpoint openai-бэкенда (или env LLM_BASE_URL)")
@@ -351,6 +356,8 @@ def main(argv: list[str] | None = None) -> int:
 
     # .env (если есть) + флаги перебивают незаданные переменные окружения.
     load_dotenv()
+    if args.chain:
+        os.environ["LLM_CHAIN"] = args.chain
     if args.backend:
         os.environ["LLM_BACKEND"] = args.backend
     if args.model:
